@@ -1,6 +1,6 @@
 # Email automation
 
-Read-only service that loads recent Gmail messages and classifies each one with OpenAI. This version covers the first three milestones: configuration, Gmail reads, and structured classification.
+Read-only service that loads recent Gmail messages and classifies each one with OpenAI. This version covers configuration, Gmail reads, structured classification, and a regression fixture set.
 
 It does not archive, label, delete, or send email. Gmail mutations stay disabled even when `DRY_RUN=false`. The OAuth scope is `gmail.readonly`.
 
@@ -57,10 +57,16 @@ Classify the latest inbox messages (default 20) and print subject, classificatio
 pnpm run process-inbox
 ```
 
-Run unit tests:
+Run unit tests. These check the permitted action for each saved fixture and do not call OpenAI:
 
 ```bash
 pnpm test
+```
+
+Check the classifier against the sanitized fixtures in `tests/fixtures/emails.ts`. This calls the model and fails when a label does not match:
+
+```bash
+pnpm run eval-fixtures
 ```
 
 ## Safety

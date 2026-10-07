@@ -11,6 +11,7 @@
     "process-inbox": "tsx scripts/process-inbox.ts",
     "gmail-auth": "tsx scripts/gmail-auth.ts",
     "test": "vitest run",
+    "eval-fixtures": "tsx scripts/eval-fixtures.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
