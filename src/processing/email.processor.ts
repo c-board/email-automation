@@ -7,6 +7,13 @@ import type { Classification } from "../types/classification.types.js";
 import type { ClassifierResult } from "../ai/email-classifier.js";
 import type { ConfidenceThresholds } from "./confidence-gate.js";
 import type { ProcessedMessageStore } from "../database/workflow-store.js";
+import {
+  archiveEmail,
+  GmailMutationDisabledError,
+  labelAsRejection,
+  ProtectedCompanyActionError,
+  type GmailActionTarget,
+} from "../gmail/gmail.actions.js";
 import { describeProposedAction, proposeAction, type ProposedAction } from "./proposed-action.js";
 
 export type EmailProcessingOutcome = {
@@ -152,6 +159,35 @@ function logOutcome(
   }
 }
 
+async function applyRejectionAction(email: EmailMessage, company: string | null, deps: InboxProcessorDeps): Promise<void> {
+  const target: GmailActionTarget = {
+    gmailMessageId: email.gmailMessageId,
+    from: email.from,
+    subject: email.subject,
+    body: email.body,
+    company,
+  };
+  try {
+    await labelAsRejection(target, deps.protectedCompanies, deps.dryRun, deps.logger);
+    await archiveEmail(target, deps.protectedCompanies, deps.dryRun, deps.logger);
+  } catch (error: unknown) {
+    if (error instanceof ProtectedCompanyActionError) {
+      return;
+    }
+    if (error instanceof GmailMutationDisabledError) {
+      deps.logger.warn(
+        {
+          gmailMessageId: email.gmailMessageId,
+          errorMessage: error.message,
+        },
+        error.message,
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
 export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProcessingResult> {
   let messageRefs: InboxMessageRef[];
   try {
@@ -250,6 +286,10 @@ export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProce
         },
         "Duplicate application skipped",
       );
+    }
+
+    if (classified.outcome.proposedAction.kind === "label_and_archive_rejection") {
+      await applyRejectionAction(email, result.classification.company, deps);
     }
   }
 

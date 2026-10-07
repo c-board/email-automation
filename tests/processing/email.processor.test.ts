@@ -4,10 +4,14 @@ import type { EmailMessage } from "../../src/types/email.types.js";
 import type { EmailClassification } from "../../src/ai/classifier.schema.js";
 import { createInMemoryProcessedMessageLookup } from "../../src/processing/processed-message-lookup.js";
 import { processInbox } from "../../src/processing/email.processor.js";
-import { archiveEmail, labelAsRejection } from "../../src/gmail/gmail.actions.js";
+import { archiveEmail, GmailMutationDisabledError, labelAsRejection } from "../../src/gmail/gmail.actions.js";
 
-vi.mock("../../src/gmail/gmail.actions.js", function () {
+vi.mock("../../src/gmail/gmail.actions.js", async function () {
+  const actual = await vi.importActual<typeof import("../../src/gmail/gmail.actions.js")>(
+    "../../src/gmail/gmail.actions.js",
+  );
   return {
+    ...actual,
     archiveEmail: vi.fn(),
     labelAsRejection: vi.fn(),
   };
@@ -148,5 +152,64 @@ describe("processInbox", function () {
     expect(archiveEmail).not.toHaveBeenCalled();
     expect(labelAsRejection).not.toHaveBeenCalled();
     expect(await processedMessages.hasBeenProcessed("bad")).toBe(false);
+  });
+
+  it("labels then archives an unprotected rejection", async function () {
+    const processedMessages = createInMemoryProcessedMessageLookup();
+    await processInbox({
+      listMessageIds: async function () {
+        return [{ id: "reject", threadId: "t" }];
+      },
+      readMessage: async function () {
+        return email("reject", "Thanks for applying");
+      },
+      classify: async function () {
+        return {
+          ok: true as const,
+          classification: classification({ classification: "REJECTION", company: "Northwind" }),
+        };
+      },
+      processedMessages,
+      logger: pino({ level: "silent" }),
+      thresholds,
+      protectedCompanies: ["Grainger"],
+      dryRun: true,
+    });
+
+    expect(labelAsRejection).toHaveBeenCalledTimes(1);
+    expect(archiveEmail).toHaveBeenCalledTimes(1);
+    const labelOrder = vi.mocked(labelAsRejection).mock.invocationCallOrder[0];
+    const archiveOrder = vi.mocked(archiveEmail).mock.invocationCallOrder[0];
+    expect(labelOrder).toBeLessThan(archiveOrder ?? Number.POSITIVE_INFINITY);
+    expect(await processedMessages.hasBeenProcessed("reject")).toBe(true);
+  });
+
+  it("keeps a rejection saved when Gmail mutations are disabled", async function () {
+    vi.mocked(labelAsRejection).mockRejectedValue(new GmailMutationDisabledError());
+    const processedMessages = createInMemoryProcessedMessageLookup();
+    const result = await processInbox({
+      listMessageIds: async function () {
+        return [{ id: "reject", threadId: "t" }];
+      },
+      readMessage: async function () {
+        return email("reject", "Thanks for applying");
+      },
+      classify: async function () {
+        return {
+          ok: true as const,
+          classification: classification({ classification: "REJECTION", company: "Northwind" }),
+        };
+      },
+      processedMessages,
+      logger: pino({ level: "silent" }),
+      thresholds,
+      protectedCompanies: ["Grainger"],
+      dryRun: false,
+    });
+
+    expect(result.failed).toBe(0);
+    expect(result.classified).toBe(1);
+    expect(archiveEmail).not.toHaveBeenCalled();
+    expect(await processedMessages.hasBeenProcessed("reject")).toBe(true);
   });
 });

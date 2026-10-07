@@ -42,9 +42,16 @@ describe("parseEnv", function () {
   });
 });
 
+const summaryRequired = {
+  SUMMARY_RECIPIENT: "alex@example.com",
+  GOOGLE_CLIENT_ID: "client-id",
+  GOOGLE_CLIENT_SECRET: "client-secret",
+  GOOGLE_REFRESH_TOKEN: "refresh-token",
+};
+
 describe("parseSummaryEnv", function () {
   it("requires a recipient and defaults the Fastmail host", function () {
-    const env = parseSummaryEnv({ SUMMARY_RECIPIENT: "alex@example.com" });
+    const env = parseSummaryEnv(summaryRequired);
     expect(env.dryRun).toBe(true);
     expect(env.summaryRecipient).toBe("alex@example.com");
     expect(env.fastmailSmtpHost).toBe("smtp.fastmail.com");
@@ -56,15 +63,19 @@ describe("parseSummaryEnv", function () {
   it("requires Fastmail credentials when dry run is off", function () {
     expect(function () {
       parseSummaryEnv({
-        SUMMARY_RECIPIENT: "alex@example.com",
+        ...summaryRequired,
         DRY_RUN: "false",
       });
     }).toThrow(/FASTMAIL_USERNAME/);
   });
 
-  it("does not require Google or OpenAI", function () {
+  it("requires Google credentials and does not require OpenAI", function () {
+    expect(function () {
+      parseSummaryEnv({ SUMMARY_RECIPIENT: "alex@example.com" });
+    }).toThrow(/GOOGLE_CLIENT_ID/);
+
     const env = parseSummaryEnv({
-      SUMMARY_RECIPIENT: "alex@example.com",
+      ...summaryRequired,
       DRY_RUN: "false",
       FASTMAIL_USERNAME: "alex@fastmail.com",
       FASTMAIL_PASSWORD: "app-password",

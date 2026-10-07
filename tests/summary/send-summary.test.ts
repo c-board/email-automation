@@ -1,11 +1,14 @@
+import { Writable } from "node:stream";
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 import { createDatabase, type AppDatabase } from "../../src/database/database.js";
 import { applications, summaryRuns } from "../../src/database/schema.js";
 import { createSqliteWorkflowStore, type SummaryStore } from "../../src/database/workflow-store.js";
+import { LogEvent } from "../../src/logging/events.js";
+import type { Logger } from "../../src/logging/logger.js";
 import { SUMMARY_FIELD_NOT_SPECIFIED, formatSummary } from "../../src/summary/format-summary.js";
 import type { SummaryMail, SummaryMailer } from "../../src/summary/fastmail.js";
-import { sendDailySummary } from "../../src/summary/send-daily-summary.js";
+import { sendDailySummary, type ConfirmationSource } from "../../src/summary/send-daily-summary.js";
 
 const headerNow = new Date("2026-10-07T04:00:00.000Z");
 
@@ -28,12 +31,38 @@ function insertApplication(
   database.insert(applications).values(input).run();
 }
 
+const confirmationSource: ConfirmationSource = {
+  from: "jobs@example.com",
+  subject: "Application received",
+  body: "We received your application.",
+};
+
 function recordingMailer(sent: SummaryMail[]): SummaryMailer {
   return {
     send: async function (mail: SummaryMail) {
       sent.push(mail);
     },
   };
+}
+
+function readConfirmation(): Promise<ConfirmationSource> {
+  return Promise.resolve(confirmationSource);
+}
+
+function unreadConfirmation(): Promise<ConfirmationSource> {
+  return Promise.reject(new Error("should not re-read a confirmation"));
+}
+
+function captureLogger(): { logger: Logger; records: Array<Record<string, unknown>> } {
+  const records: Array<Record<string, unknown>> = [];
+  const stream = new Writable({
+    write: function (chunk: Buffer | string, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
+      const text = typeof chunk === "string" ? chunk : chunk.toString();
+      records.push(JSON.parse(text) as Record<string, unknown>);
+      callback();
+    },
+  });
+  return { logger: pino({ level: "info" }, stream), records };
 }
 
 describe("formatSummary", function () {
@@ -89,6 +118,8 @@ describe("sendDailySummary", function () {
       print: function (text: string) {
         printed.push(text);
       },
+      protectedCompanies: ["Grainger"],
+      readConfirmation: unreadConfirmation,
     });
 
     expect(result).toEqual({ status: "empty", applicationCount: 0 });
@@ -117,6 +148,7 @@ describe("sendDailySummary", function () {
       createdAt: "2026-10-06T16:00:00.000Z",
     });
 
+    const captured = captureLogger();
     const result = await sendDailySummary({
       store,
       mailer: {
@@ -129,10 +161,12 @@ describe("sendDailySummary", function () {
       fromAddress: null,
       timeZone: "America/Chicago",
       now: headerNow,
-      logger: pino({ level: "silent" }),
+      logger: captured.logger,
       print: function (text: string) {
         printed.push(text);
       },
+      protectedCompanies: ["Grainger"],
+      readConfirmation,
     });
 
     expect(result).toEqual({ status: "dry_run", applicationCount: 2 });
@@ -153,6 +187,14 @@ describe("sendDailySummary", function () {
       return row.summarized === false;
     })).toBe(true);
     expect(database.select().from(summaryRuns).all()).toEqual([]);
+    const events = captured.records.map(function (record) {
+      return record.event;
+    });
+    expect(events).toContain(LogEvent.actionBlockedProtectedCompany);
+    expect(events).toContain(LogEvent.emailArchived);
+    expect(events.filter(function (event) {
+      return event === LogEvent.emailArchived;
+    })).toHaveLength(1);
   });
 
   it("marks only the included rows after a successful send", async function () {
@@ -175,6 +217,7 @@ describe("sendDailySummary", function () {
       createdAt: "2026-10-06T15:00:00.000Z",
     });
 
+    const reads: string[] = [];
     const first = await sendDailySummary({
       store,
       mailer: recordingMailer(sent),
@@ -186,6 +229,11 @@ describe("sendDailySummary", function () {
       logger: pino({ level: "silent" }),
       print: function () {
         return undefined;
+      },
+      protectedCompanies: ["Grainger"],
+      readConfirmation: async function (gmailMessageId: string) {
+        reads.push(gmailMessageId);
+        return confirmationSource;
       },
     });
 
@@ -221,7 +269,9 @@ describe("sendDailySummary", function () {
       createdAt: "2026-10-07T12:00:00.000Z",
     });
 
+    expect(reads).toEqual(["grainger"]);
     const printed: string[] = [];
+    const secondLogs = captureLogger();
     const second = await sendDailySummary({
       store,
       mailer: recordingMailer(sent),
@@ -230,15 +280,24 @@ describe("sendDailySummary", function () {
       fromAddress: "alex@fastmail.com",
       timeZone: "America/Chicago",
       now: headerNow,
-      logger: pino({ level: "silent" }),
+      logger: secondLogs.logger,
       print: function (text: string) {
         printed.push(text);
+      },
+      protectedCompanies: ["Grainger"],
+      readConfirmation: async function (gmailMessageId: string) {
+        reads.push(gmailMessageId);
+        return confirmationSource;
       },
     });
 
     expect(second).toEqual({ status: "sent", applicationCount: 1 });
     expect(printed[0]).toContain("Company: Mux");
     expect(printed[0]).not.toContain("Grainger");
+    expect(reads).toEqual(["grainger", "mux"]);
+    expect(secondLogs.records.some(function (record) {
+      return record.msg === "Gmail mutations are not enabled";
+    })).toBe(true);
     expect(database.select().from(summaryRuns).all()).toHaveLength(2);
   });
 
@@ -269,6 +328,8 @@ describe("sendDailySummary", function () {
       print: function () {
         return undefined;
       },
+      protectedCompanies: ["Grainger"],
+      readConfirmation: unreadConfirmation,
     });
 
     expect(result).toEqual({ status: "failed", applicationCount: 1 });
@@ -278,5 +339,49 @@ describe("sendDailySummary", function () {
     expect(runs[0]?.success).toBe(false);
     expect(runs[0]?.applicationCount).toBe(1);
     expect(runs[0]?.recipient).toBe("alex@example.com");
+  });
+
+  it("skips an archive decision when the confirmation cannot be re-read", async function () {
+    const { database, store } = openStore();
+    const captured = captureLogger();
+    insertApplication(database, {
+      gmailMessageId: "mux",
+      company: "Mux",
+      position: "Engineer",
+      applicationDate: "2026-10-06",
+      summarized: false,
+      createdAt: "2026-10-06T15:00:00.000Z",
+    });
+
+    const result = await sendDailySummary({
+      store,
+      mailer: {
+        send: async function () {
+          throw new Error("dry run must not send");
+        },
+      },
+      dryRun: true,
+      recipient: "alex@example.com",
+      fromAddress: null,
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: captured.logger,
+      print: function () {
+        return undefined;
+      },
+      protectedCompanies: ["Grainger"],
+      readConfirmation: async function () {
+        throw new Error("Gmail unavailable");
+      },
+    });
+
+    expect(result).toEqual({ status: "dry_run", applicationCount: 1 });
+    expect(captured.records.some(function (record) {
+      return record.event === LogEvent.gmailApiError;
+    })).toBe(true);
+    expect(captured.records.some(function (record) {
+      return record.event === LogEvent.emailArchived;
+    })).toBe(false);
+    expect(database.select().from(applications).all()[0]?.summarized).toBe(false);
   });
 });

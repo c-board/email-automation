@@ -40,6 +40,11 @@ const summaryEnvSchema = z.object({
   TIMEZONE: z.string().min(1).default("America/Chicago"),
   LOG_LEVEL: z.enum(logLevels).default("info"),
   DATABASE_URL: z.string().min(1).default(DEFAULT_DATABASE_URL),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  GOOGLE_REFRESH_TOKEN: z.string().min(1),
+  MAX_EMAIL_BODY_CHARS: z.coerce.number().int().positive().default(DEFAULT_MAX_EMAIL_BODY_CHARS),
+  PROTECTED_COMPANIES: z.string().optional(),
   SUMMARY_RECIPIENT: z.string().min(1),
   FASTMAIL_SMTP_HOST: z.string().min(1).default(DEFAULT_FASTMAIL_SMTP_HOST),
   FASTMAIL_SMTP_PORT: z.coerce.number().int().positive().default(DEFAULT_FASTMAIL_SMTP_PORT),
@@ -72,6 +77,11 @@ export type GoogleAuthEnv = {
 
 type SummaryEnvBase = {
   nodeEnv: "development" | "test" | "production";
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRefreshToken: string;
+  maxEmailBodyChars: number;
+  protectedCompanies: string[];
   timezone: string;
   logLevel: (typeof logLevels)[number];
   databaseUrl: string;
@@ -190,6 +200,11 @@ export function parseSummaryEnv(source: EnvSource): SummaryEnv {
   const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
   const base = {
     nodeEnv: parsed.data.NODE_ENV,
+    googleClientId: parsed.data.GOOGLE_CLIENT_ID,
+    googleClientSecret: parsed.data.GOOGLE_CLIENT_SECRET,
+    googleRefreshToken: parsed.data.GOOGLE_REFRESH_TOKEN,
+    maxEmailBodyChars: parsed.data.MAX_EMAIL_BODY_CHARS,
+    protectedCompanies: parseProtectedCompanies(parsed.data.PROTECTED_COMPANIES),
     timezone: parsed.data.TIMEZONE,
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,

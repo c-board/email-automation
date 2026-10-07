@@ -1,4 +1,9 @@
-import type { SummaryStore, SummaryRunRecord } from "../database/workflow-store.js";
+import type { SummaryStore, SummaryRunRecord, UnsummarizedApplication } from "../database/workflow-store.js";
+import {
+  archiveEmail,
+  GmailMutationDisabledError,
+  ProtectedCompanyActionError,
+} from "../gmail/gmail.actions.js";
 import type { Logger } from "../logging/logger.js";
 import { LogEvent } from "../logging/events.js";
 import { errorText } from "../logging/sanitize.js";
@@ -8,6 +13,12 @@ import type { SummaryMailer } from "./fastmail.js";
 export type SendDailySummaryResult = {
   status: "empty" | "dry_run" | "sent" | "failed";
   applicationCount: number;
+};
+
+export type ConfirmationSource = {
+  from: string;
+  subject: string;
+  body: string;
 };
 
 export type SendDailySummaryDeps = {
@@ -20,6 +31,8 @@ export type SendDailySummaryDeps = {
   now: Date;
   logger: Logger;
   print: (text: string) => void;
+  protectedCompanies: readonly string[];
+  readConfirmation: (gmailMessageId: string) => Promise<ConfirmationSource>;
 };
 
 function summaryRun(input: {
@@ -30,6 +43,58 @@ function summaryRun(input: {
   success: boolean;
 }): SummaryRunRecord {
   return input;
+}
+
+async function archiveIncludedConfirmations(
+  applications: readonly UnsummarizedApplication[],
+  deps: SendDailySummaryDeps,
+): Promise<void> {
+  for (const application of applications) {
+    let source: ConfirmationSource;
+    try {
+      source = await deps.readConfirmation(application.gmailMessageId);
+    } catch (error: unknown) {
+      deps.logger.error(
+        {
+          event: LogEvent.gmailApiError,
+          gmailMessageId: application.gmailMessageId,
+          errorMessage: errorText(error),
+        },
+        "Gmail API error",
+      );
+      continue;
+    }
+
+    try {
+      await archiveEmail(
+        {
+          gmailMessageId: application.gmailMessageId,
+          from: source.from,
+          subject: source.subject,
+          body: source.body,
+          company: application.company,
+        },
+        deps.protectedCompanies,
+        deps.dryRun,
+        deps.logger,
+      );
+    } catch (error: unknown) {
+      if (error instanceof ProtectedCompanyActionError) {
+        continue;
+      }
+      if (error instanceof GmailMutationDisabledError) {
+        deps.logger.warn(
+          {
+            gmailMessageId: application.gmailMessageId,
+            errorMessage: error.message,
+          },
+          error.message,
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function sendDailySummary(deps: SendDailySummaryDeps): Promise<SendDailySummaryResult> {
@@ -56,6 +121,7 @@ export async function sendDailySummary(deps: SendDailySummaryDeps): Promise<Send
   );
 
   if (deps.dryRun) {
+    await archiveIncludedConfirmations(applications, deps);
     deps.logger.info(
       {
         event: LogEvent.summaryDryRun,
@@ -127,6 +193,7 @@ export async function sendDailySummary(deps: SendDailySummaryDeps): Promise<Send
     );
     return { status: "failed", applicationCount: applications.length };
   }
+  await archiveIncludedConfirmations(applications, deps);
   deps.logger.info(
     {
       event: LogEvent.summarySent,

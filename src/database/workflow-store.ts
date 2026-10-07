@@ -29,6 +29,7 @@ export type ProcessedMessageStore = {
 
 export type UnsummarizedApplication = {
   id: number;
+  gmailMessageId: string;
   company: string | null;
   position: string | null;
   applicationDate: string | null;
@@ -119,6 +120,7 @@ export function createSqliteWorkflowStore(database: AppDatabase): WorkflowStore 
     return database
       .select({
         id: applications.id,
+        gmailMessageId: applications.gmailMessageId,
         company: applications.company,
         position: applications.position,
         applicationDate: applications.applicationDate,

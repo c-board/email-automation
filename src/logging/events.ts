@@ -14,4 +14,6 @@ export const LogEvent = {
   summaryDryRun: "summary.dry_run",
   summarySent: "summary.sent",
   summaryFailed: "summary.failed",
+  emailArchived: "email.archived",
+  rejectionLabeled: "rejection.labeled",
 } as const;

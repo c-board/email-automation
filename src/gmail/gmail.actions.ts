@@ -59,9 +59,21 @@ function assertNotProtected(
   throw new ProtectedCompanyActionError(action);
 }
 
-function refuseMutation(dryRun: boolean): void {
-  void dryRun;
-  throw new GmailMutationDisabledError();
+function logDryRunAction(
+  email: GmailActionTarget,
+  logger: Logger | undefined,
+  event: (typeof LogEvent)[keyof typeof LogEvent],
+  message: string,
+): void {
+  logger?.info(
+    {
+      event,
+      gmailMessageId: email.gmailMessageId,
+      subject: email.subject,
+      dryRun: true,
+    },
+    message,
+  );
 }
 
 export async function archiveEmail(
@@ -71,7 +83,11 @@ export async function archiveEmail(
   logger?: Logger,
 ): Promise<void> {
   assertNotProtected(email, protectedCompanies, "archive", logger);
-  refuseMutation(dryRun);
+  if (dryRun) {
+    logDryRunAction(email, logger, LogEvent.emailArchived, "Email would be archived");
+    return;
+  }
+  throw new GmailMutationDisabledError();
 }
 
 export async function labelAsRejection(
@@ -81,5 +97,9 @@ export async function labelAsRejection(
   logger?: Logger,
 ): Promise<void> {
   assertNotProtected(email, protectedCompanies, "label", logger);
-  refuseMutation(dryRun);
+  if (dryRun) {
+    logDryRunAction(email, logger, LogEvent.rejectionLabeled, "Email would be labeled as a rejection");
+    return;
+  }
+  throw new GmailMutationDisabledError();
 }

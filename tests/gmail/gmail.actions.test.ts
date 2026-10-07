@@ -67,6 +67,15 @@ describe("gmail actions", function () {
     expect(createLabel).not.toHaveBeenCalled();
   });
 
+  it("logs a dry run and does not call Gmail", async function () {
+    await expect(archiveEmail(other, ["Grainger"], true)).resolves.toBeUndefined();
+    await expect(labelAsRejection(other, ["Grainger"], true)).resolves.toBeUndefined();
+    await expect(archiveEmail(grainger, ["Grainger"], true)).rejects.toBeInstanceOf(ProtectedCompanyActionError);
+    expect(modify).not.toHaveBeenCalled();
+    expect(trash).not.toHaveBeenCalled();
+    expect(createLabel).not.toHaveBeenCalled();
+  });
+
   it("refuses mutations even when dry run is disabled", async function () {
     await expect(archiveEmail(other, ["Grainger"], false)).rejects.toBeInstanceOf(GmailMutationDisabledError);
     await expect(labelAsRejection(other, ["Grainger"], false)).rejects.toBeInstanceOf(GmailMutationDisabledError);
