@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnv, parseGoogleAuthEnv, parseSummaryEnv } from "../../src/config/env.js";
+import { parseEnv, parseGoogleAuthEnv, parseSchedulerEnv, parseSummaryEnv } from "../../src/config/env.js";
 
 const required = {
   GOOGLE_CLIENT_ID: "client-id",
@@ -84,6 +84,53 @@ describe("parseSummaryEnv", function () {
     if (!env.dryRun) {
       expect(env.fastmailUsername).toBe("alex@fastmail.com");
     }
+  });
+});
+
+describe("parseSchedulerEnv", function () {
+  it("defaults both schedules and requires a summary recipient", function () {
+    const env = parseSchedulerEnv({
+      ...required,
+      SUMMARY_RECIPIENT: "alex@example.com",
+    });
+    expect(env.dryRun).toBe(true);
+    expect(env.inboxProcessingCron).toBe("*/30 * * * *");
+    expect(env.summaryCron).toBe("0 18 * * *");
+    expect(env.timezone).toBe("America/Chicago");
+    expect(env.summaryRecipient).toBe("alex@example.com");
+    expect(env.fastmailUsername).toBeNull();
+  });
+
+  it("rejects an invalid cron expression", function () {
+    expect(function () {
+      parseSchedulerEnv({
+        ...required,
+        SUMMARY_RECIPIENT: "alex@example.com",
+        INBOX_PROCESSING_CRON: "not a cron",
+      });
+    }).toThrow(/INBOX_PROCESSING_CRON/);
+
+    expect(function () {
+      parseSchedulerEnv({
+        ...required,
+        SUMMARY_RECIPIENT: "alex@example.com",
+        SUMMARY_CRON: "not a cron",
+      });
+    }).toThrow(/SUMMARY_CRON/);
+  });
+
+  it("requires a recipient and Fastmail credentials when dry run is off", function () {
+    expect(function () {
+      parseSchedulerEnv(required);
+    }).toThrow(/SUMMARY_RECIPIENT/);
+
+    expect(function () {
+      parseSchedulerEnv({
+        ...required,
+        SUMMARY_RECIPIENT: "alex@example.com",
+        DRY_RUN: "false",
+      });
+    }).toThrow(/FASTMAIL_USERNAME/);
   });
 });
 

@@ -1,12 +1,15 @@
 import dotenv from "dotenv";
 import { z } from "zod";
+import { validate as validateCron } from "node-cron";
 import {
   DEFAULT_DATABASE_URL,
   DEFAULT_FASTMAIL_SMTP_HOST,
   DEFAULT_FASTMAIL_SMTP_PORT,
   DEFAULT_FETCH_LIMIT,
+  DEFAULT_INBOX_PROCESSING_CRON,
   DEFAULT_MAX_EMAIL_BODY_CHARS,
   DEFAULT_PROTECTED_COMPANIES,
+  DEFAULT_SUMMARY_CRON,
 } from "./constants.js";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace"] as const;
@@ -52,6 +55,16 @@ const summaryEnvSchema = z.object({
   FASTMAIL_PASSWORD: z.string().min(1).optional(),
 });
 
+const schedulerEnvSchema = envSchema.extend({
+  SUMMARY_RECIPIENT: z.string().min(1),
+  FASTMAIL_SMTP_HOST: z.string().min(1).default(DEFAULT_FASTMAIL_SMTP_HOST),
+  FASTMAIL_SMTP_PORT: z.coerce.number().int().positive().default(DEFAULT_FASTMAIL_SMTP_PORT),
+  FASTMAIL_USERNAME: z.string().min(1).optional(),
+  FASTMAIL_PASSWORD: z.string().min(1).optional(),
+  INBOX_PROCESSING_CRON: z.string().min(1).default(DEFAULT_INBOX_PROCESSING_CRON),
+  SUMMARY_CRON: z.string().min(1).default(DEFAULT_SUMMARY_CRON),
+});
+
 export type Env = {
   nodeEnv: "development" | "test" | "production";
   googleClientId: string;
@@ -95,6 +108,12 @@ export type SummaryEnv = SummaryEnvBase &
     | { dryRun: true; fastmailUsername: string | null; fastmailPassword: string | null }
     | { dryRun: false; fastmailUsername: string; fastmailPassword: string }
   );
+
+export type SchedulerEnv = Env &
+  SummaryEnv & {
+    inboxProcessingCron: string;
+    summaryCron: string;
+  };
 
 type EnvSource = Record<string, string | undefined>;
 
@@ -247,4 +266,77 @@ export function loadGoogleAuthEnv(): GoogleAuthEnv {
 export function loadSummaryEnv(): SummaryEnv {
   dotenv.config({ quiet: true });
   return parseSummaryEnv(process.env);
+}
+
+function requireCron(name: string, expression: string): string {
+  if (!validateCron(expression)) {
+    throw new Error(`${name} is not a valid cron expression`);
+  }
+  return expression;
+}
+
+export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
+  const parsed = schedulerEnvSchema.safeParse(blankToUndefined(source));
+  if (!parsed.success) {
+    throw new Error(formatIssues(parsed.error));
+  }
+
+  if (parsed.data.REVIEW_CONFIDENCE >= parsed.data.AUTO_ACTION_CONFIDENCE) {
+    throw new Error("REVIEW_CONFIDENCE must be less than AUTO_ACTION_CONFIDENCE");
+  }
+
+  const inboxProcessingCron = requireCron(
+    "INBOX_PROCESSING_CRON",
+    parsed.data.INBOX_PROCESSING_CRON,
+  );
+  const summaryCron = requireCron("SUMMARY_CRON", parsed.data.SUMMARY_CRON);
+  const dryRun = parsed.data.DRY_RUN === "true";
+  const fastmailUsername = parsed.data.FASTMAIL_USERNAME ?? null;
+  const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
+  const shared = {
+    nodeEnv: parsed.data.NODE_ENV,
+    googleClientId: parsed.data.GOOGLE_CLIENT_ID,
+    googleClientSecret: parsed.data.GOOGLE_CLIENT_SECRET,
+    googleRefreshToken: parsed.data.GOOGLE_REFRESH_TOKEN,
+    openAiApiKey: parsed.data.OPENAI_API_KEY,
+    openAiModel: parsed.data.OPENAI_MODEL,
+    autoActionConfidence: parsed.data.AUTO_ACTION_CONFIDENCE,
+    reviewConfidence: parsed.data.REVIEW_CONFIDENCE,
+    timezone: parsed.data.TIMEZONE,
+    gmailFetchLimit: parsed.data.GMAIL_FETCH_LIMIT,
+    maxEmailBodyChars: parsed.data.MAX_EMAIL_BODY_CHARS,
+    protectedCompanies: parseProtectedCompanies(parsed.data.PROTECTED_COMPANIES),
+    logLevel: parsed.data.LOG_LEVEL,
+    databaseUrl: parsed.data.DATABASE_URL,
+    summaryRecipient: parsed.data.SUMMARY_RECIPIENT,
+    fastmailSmtpHost: parsed.data.FASTMAIL_SMTP_HOST,
+    fastmailSmtpPort: parsed.data.FASTMAIL_SMTP_PORT,
+    inboxProcessingCron,
+    summaryCron,
+  };
+
+  if (dryRun) {
+    return {
+      ...shared,
+      dryRun: true,
+      fastmailUsername,
+      fastmailPassword,
+    };
+  }
+
+  if (fastmailUsername === null || fastmailPassword === null) {
+    throw new Error("FASTMAIL_USERNAME and FASTMAIL_PASSWORD are required when DRY_RUN=false");
+  }
+
+  return {
+    ...shared,
+    dryRun: false,
+    fastmailUsername,
+    fastmailPassword,
+  };
+}
+
+export function loadSchedulerEnv(): SchedulerEnv {
+  dotenv.config({ quiet: true });
+  return parseSchedulerEnv(process.env);
 }

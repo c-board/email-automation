@@ -1,6 +1,6 @@
 # Email automation
 
-Read-only service that loads recent Gmail messages and classifies each one with OpenAI. This version covers configuration, Gmail reads, structured classification, and a regression fixture set.
+Service that classifies recent Gmail messages with OpenAI, stores application confirmations in SQLite, and emails a daily summary. `pnpm start` stays running and runs those jobs on a schedule.
 
 With `DRY_RUN=true`, label and archive actions are only logged. Set `DRY_RUN=false` to label an unprotected rejection `Job Rejections` and archive it, and to archive a confirmation after its summary is sent. Messages are never deleted. Grainger stays blocked. The OAuth scope is `gmail.modify`. An existing read-only refresh token cannot make these changes.
 
@@ -45,13 +45,13 @@ Open the printed URL, approve access, and paste `GOOGLE_REFRESH_TOKEN` into `.en
 
 ## Commands
 
-Confirm configuration and logging:
+Start the scheduler and leave it running. It does not run a job at startup. The next inbox check and the next daily summary follow `INBOX_PROCESSING_CRON` and `SUMMARY_CRON` in `TIMEZONE` (default `America/Chicago`). Those default to every 30 minutes (`*/30 * * * *`) and 6:00 p.m. (`0 18 * * *`). `SUMMARY_RECIPIENT` is required. Fastmail username and password are required only when `DRY_RUN=false`. If one job is still running, the other waits. A job error is logged and the process stays up.
 
 ```bash
 pnpm start
 ```
 
-Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. With `DRY_RUN=true`, an unprotected rejection is logged as a future `Job Rejections` label and archive. With `DRY_RUN=false`, that label is applied and the message is archived:
+Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. With `DRY_RUN=true`, an unprotected rejection is logged as a future `Job Rejections` label and archive. With `DRY_RUN=false`, that label is applied and the message is archived. This command still runs once and exits:
 
 ```bash
 pnpm run process-inbox
@@ -83,3 +83,18 @@ pnpm run eval-fixtures
 - An invalid model response produces no action.
 - Grainger is protected by default (`PROTECTED_COMPANIES`). A protected company is never given an archive or rejection-label proposal.
 - Logs omit email bodies and redact tokens, API keys, and passwords.
+
+## Railway
+
+Keep one replica. Two copies would write the same SQLite file and could send two summaries. Mount a volume at `/data` so the database survives a deploy, and set `DATABASE_URL=file:/data/email-automation.sqlite`.
+
+Copy the variables from `.env` into the Railway service. Do not put secrets in the repo. Include the Google client id, secret, and refresh token, `OPENAI_API_KEY`, `SUMMARY_RECIPIENT`, `TIMEZONE`, `DRY_RUN`, and the two cron expressions. Fastmail host, port, username, and app password are required in those variables when `DRY_RUN=false`.
+
+Leave `DRY_RUN=true` until the Railway variables contain a Gmail refresh token from `pnpm run gmail-auth` (scope `gmail.modify`) and a Fastmail app password. Then:
+
+```bash
+railway login
+railway up
+```
+
+Confirm the service is set to one replica. `railway.toml` starts the container with `pnpm start`.
