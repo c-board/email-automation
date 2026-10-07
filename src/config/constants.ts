@@ -1,0 +1,16 @@
+export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
+export const GMAIL_OAUTH_HOST = "127.0.0.1";
+export const GMAIL_OAUTH_PORT = 42813;
+export const GMAIL_OAUTH_REDIRECT_PATH = "/oauth2callback";
+export const GMAIL_OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
+
+export const DEFAULT_FETCH_LIMIT = 20;
+export const DEFAULT_MAX_EMAIL_BODY_CHARS = 30_000;
+export const DEFAULT_PROTECTED_COMPANIES = ["Grainger"] as const;
+export const REJECTION_LABEL_NAME = "Job Rejections";
+export const GMAIL_MUTATIONS_DISABLED_MESSAGE = "Gmail mutations are not enabled";
+
+export function gmailOauthRedirectUri(): string {
+  return `http://${GMAIL_OAUTH_HOST}:${GMAIL_OAUTH_PORT}${GMAIL_OAUTH_REDIRECT_PATH}`;
+}

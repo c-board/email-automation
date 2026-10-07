@@ -1,0 +1,14 @@
+export const CLASSIFICATIONS = [
+  "APPLICATION_CONFIRMATION",
+  "REJECTION",
+  "INTERVIEW",
+  "RECRUITER_OUTREACH",
+  "ASSESSMENT",
+  "OFFER",
+  "STATUS_UPDATE",
+  "REQUEST_FOR_INFORMATION",
+  "OTHER",
+  "UNKNOWN",
+] as const;
+
+export type Classification = (typeof CLASSIFICATIONS)[number];
