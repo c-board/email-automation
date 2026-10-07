@@ -1,0 +1,282 @@
+import pino from "pino";
+import { describe, expect, it } from "vitest";
+import { createDatabase, type AppDatabase } from "../../src/database/database.js";
+import { applications, summaryRuns } from "../../src/database/schema.js";
+import { createSqliteWorkflowStore, type SummaryStore } from "../../src/database/workflow-store.js";
+import { SUMMARY_FIELD_NOT_SPECIFIED, formatSummary } from "../../src/summary/format-summary.js";
+import type { SummaryMail, SummaryMailer } from "../../src/summary/fastmail.js";
+import { sendDailySummary } from "../../src/summary/send-daily-summary.js";
+
+const headerNow = new Date("2026-10-07T04:00:00.000Z");
+
+function openStore(): { database: AppDatabase; store: SummaryStore } {
+  const database = createDatabase(":memory:");
+  return { database, store: createSqliteWorkflowStore(database) };
+}
+
+function insertApplication(
+  database: AppDatabase,
+  input: {
+    gmailMessageId: string;
+    company: string | null;
+    position: string | null;
+    applicationDate: string | null;
+    summarized: boolean;
+    createdAt: string;
+  },
+): void {
+  database.insert(applications).values(input).run();
+}
+
+function recordingMailer(sent: SummaryMail[]): SummaryMailer {
+  return {
+    send: async function (mail: SummaryMail) {
+      sent.push(mail);
+    },
+  };
+}
+
+describe("formatSummary", function () {
+  it("uses the timezone for the header and does not shift a calendar date", function () {
+    const email = formatSummary({
+      applications: [
+        {
+          company: null,
+          position: "  ",
+          applicationDate: "2026-10-07",
+        },
+      ],
+      headerDate: headerNow,
+      timeZone: "America/Chicago",
+    });
+
+    expect(email.subject).toBe("Job Applications — October 6, 2026");
+    expect(email.body).toBe(
+      [
+        "Job Applications — October 6, 2026",
+        "",
+        `1. Company: ${SUMMARY_FIELD_NOT_SPECIFIED}`,
+        `   Position: ${SUMMARY_FIELD_NOT_SPECIFIED}`,
+        "   Application received: October 7, 2026",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("sendDailySummary", function () {
+  it("does nothing when every confirmation is already summarized", async function () {
+    const { database, store } = openStore();
+    const sent: SummaryMail[] = [];
+    const printed: string[] = [];
+    insertApplication(database, {
+      gmailMessageId: "old",
+      company: "Old Co",
+      position: "Engineer",
+      applicationDate: "2026-10-01",
+      summarized: true,
+      createdAt: "2026-10-01T12:00:00.000Z",
+    });
+
+    const result = await sendDailySummary({
+      store,
+      mailer: recordingMailer(sent),
+      dryRun: false,
+      recipient: "alex@example.com",
+      fromAddress: "alex@fastmail.com",
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: pino({ level: "silent" }),
+      print: function (text: string) {
+        printed.push(text);
+      },
+    });
+
+    expect(result).toEqual({ status: "empty", applicationCount: 0 });
+    expect(printed).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(database.select().from(summaryRuns).all()).toEqual([]);
+  });
+
+  it("prints a dry run and leaves rows unsummarized", async function () {
+    const { database, store } = openStore();
+    const printed: string[] = [];
+    insertApplication(database, {
+      gmailMessageId: "grainger",
+      company: "Grainger",
+      position: null,
+      applicationDate: "2026-10-06",
+      summarized: false,
+      createdAt: "2026-10-06T15:00:00.000Z",
+    });
+    insertApplication(database, {
+      gmailMessageId: "mux",
+      company: " Mux ",
+      position: "Senior Full Stack Engineer",
+      applicationDate: "2026-10-07",
+      summarized: false,
+      createdAt: "2026-10-06T16:00:00.000Z",
+    });
+
+    const result = await sendDailySummary({
+      store,
+      mailer: {
+        send: async function () {
+          throw new Error("dry run must not send");
+        },
+      },
+      dryRun: true,
+      recipient: "alex@example.com",
+      fromAddress: null,
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: pino({ level: "silent" }),
+      print: function (text: string) {
+        printed.push(text);
+      },
+    });
+
+    expect(result).toEqual({ status: "dry_run", applicationCount: 2 });
+    expect(printed).toEqual([
+      [
+        "Job Applications — October 6, 2026",
+        "",
+        "1. Company: Grainger",
+        `   Position: ${SUMMARY_FIELD_NOT_SPECIFIED}`,
+        "   Application received: October 6, 2026",
+        "",
+        "2. Company: Mux",
+        "   Position: Senior Full Stack Engineer",
+        "   Application received: October 7, 2026",
+      ].join("\n"),
+    ]);
+    expect(database.select().from(applications).all().every(function (row) {
+      return row.summarized === false;
+    })).toBe(true);
+    expect(database.select().from(summaryRuns).all()).toEqual([]);
+  });
+
+  it("marks only the included rows after a successful send", async function () {
+    const { database, store } = openStore();
+    const sent: SummaryMail[] = [];
+    insertApplication(database, {
+      gmailMessageId: "old",
+      company: "Old Co",
+      position: "Engineer",
+      applicationDate: "2026-10-01",
+      summarized: true,
+      createdAt: "2026-10-01T12:00:00.000Z",
+    });
+    insertApplication(database, {
+      gmailMessageId: "grainger",
+      company: "Grainger",
+      position: null,
+      applicationDate: "2026-10-06",
+      summarized: false,
+      createdAt: "2026-10-06T15:00:00.000Z",
+    });
+
+    const first = await sendDailySummary({
+      store,
+      mailer: recordingMailer(sent),
+      dryRun: false,
+      recipient: "alex@example.com",
+      fromAddress: "alex@fastmail.com",
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: pino({ level: "silent" }),
+      print: function () {
+        return undefined;
+      },
+    });
+
+    expect(first.status).toBe("sent");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subject).toBe("Job Applications — October 6, 2026");
+    expect(sent[0]?.text).toContain("Company: Grainger");
+    expect(sent[0]?.text).not.toContain("Old Co");
+    expect(sent[0]?.from).toBe("alex@fastmail.com");
+    expect(sent[0]?.to).toBe("alex@example.com");
+
+    const afterFirst = database.select().from(applications).all();
+    expect(afterFirst.find(function (row) {
+      return row.gmailMessageId === "old";
+    })?.summarized).toBe(true);
+    expect(afterFirst.find(function (row) {
+      return row.gmailMessageId === "grainger";
+    })?.summarized).toBe(true);
+    expect(database.select().from(summaryRuns).all()).toEqual([
+      expect.objectContaining({
+        recipient: "alex@example.com",
+        applicationCount: 1,
+        success: true,
+      }),
+    ]);
+
+    insertApplication(database, {
+      gmailMessageId: "mux",
+      company: "Mux",
+      position: "Senior Full Stack Engineer",
+      applicationDate: "2026-10-07",
+      summarized: false,
+      createdAt: "2026-10-07T12:00:00.000Z",
+    });
+
+    const printed: string[] = [];
+    const second = await sendDailySummary({
+      store,
+      mailer: recordingMailer(sent),
+      dryRun: false,
+      recipient: "alex@example.com",
+      fromAddress: "alex@fastmail.com",
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: pino({ level: "silent" }),
+      print: function (text: string) {
+        printed.push(text);
+      },
+    });
+
+    expect(second).toEqual({ status: "sent", applicationCount: 1 });
+    expect(printed[0]).toContain("Company: Mux");
+    expect(printed[0]).not.toContain("Grainger");
+    expect(database.select().from(summaryRuns).all()).toHaveLength(2);
+  });
+
+  it("records a failed send and leaves confirmations unsummarized", async function () {
+    const { database, store } = openStore();
+    insertApplication(database, {
+      gmailMessageId: "grainger",
+      company: "Grainger",
+      position: null,
+      applicationDate: "2026-10-06",
+      summarized: false,
+      createdAt: "2026-10-06T15:00:00.000Z",
+    });
+
+    const result = await sendDailySummary({
+      store,
+      mailer: {
+        send: async function () {
+          throw new Error("SMTP rejected the message");
+        },
+      },
+      dryRun: false,
+      recipient: "alex@example.com",
+      fromAddress: "alex@fastmail.com",
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: pino({ level: "silent" }),
+      print: function () {
+        return undefined;
+      },
+    });
+
+    expect(result).toEqual({ status: "failed", applicationCount: 1 });
+    expect(database.select().from(applications).all()[0]?.summarized).toBe(false);
+    const runs = database.select().from(summaryRuns).all();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.success).toBe(false);
+    expect(runs[0]?.applicationCount).toBe(1);
+    expect(runs[0]?.recipient).toBe("alex@example.com");
+  });
+});

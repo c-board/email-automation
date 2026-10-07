@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { Classification } from "../types/classification.types.js";
 import type { AppDatabase } from "./database.js";
-import { applications, processedMessages } from "./schema.js";
+import { applications, processedMessages, summaryRuns } from "./schema.js";
 
 export type ApplicationDraft = {
   company: string | null;
@@ -27,6 +27,29 @@ export type ProcessedMessageStore = {
   saveProcessed: (input: SaveProcessedInput) => Promise<SaveProcessedResult>;
 };
 
+export type UnsummarizedApplication = {
+  id: number;
+  company: string | null;
+  position: string | null;
+  applicationDate: string | null;
+};
+
+export type SummaryRunRecord = {
+  startedAt: string;
+  completedAt: string;
+  recipient: string;
+  applicationCount: number;
+  success: boolean;
+};
+
+export type SummaryStore = {
+  listUnsummarizedApplications: () => Promise<UnsummarizedApplication[]>;
+  completeSuccessfulSummary: (input: { applicationIds: number[]; run: SummaryRunRecord }) => Promise<void>;
+  recordSummaryRun: (run: SummaryRunRecord) => Promise<void>;
+};
+
+export type WorkflowStore = ProcessedMessageStore & SummaryStore;
+
 export function applicationDedupKey(application: ApplicationDraft): string | null {
   const company = application.company?.trim().toLowerCase() ?? "";
   const position = application.position?.trim().toLowerCase() ?? "";
@@ -37,7 +60,7 @@ export function applicationDedupKey(application: ApplicationDraft): string | nul
   return `${company}|${position}|${applicationDate}`;
 }
 
-export function createSqliteWorkflowStore(database: AppDatabase): ProcessedMessageStore {
+export function createSqliteWorkflowStore(database: AppDatabase): WorkflowStore {
   async function hasBeenProcessed(gmailMessageId: string): Promise<boolean> {
     const existing = database
       .select({ id: processedMessages.id })
@@ -92,5 +115,61 @@ export function createSqliteWorkflowStore(database: AppDatabase): ProcessedMessa
     });
   }
 
-  return { hasBeenProcessed, saveProcessed };
+  async function listUnsummarizedApplications(): Promise<UnsummarizedApplication[]> {
+    return database
+      .select({
+        id: applications.id,
+        company: applications.company,
+        position: applications.position,
+        applicationDate: applications.applicationDate,
+      })
+      .from(applications)
+      .where(eq(applications.summarized, false))
+      .orderBy(asc(applications.createdAt), asc(applications.id))
+      .all();
+  }
+
+  async function completeSuccessfulSummary(input: {
+    applicationIds: number[];
+    run: SummaryRunRecord;
+  }): Promise<void> {
+    database.transaction(function (tx) {
+      if (input.applicationIds.length > 0) {
+        tx.update(applications)
+          .set({ summarized: true })
+          .where(inArray(applications.id, input.applicationIds))
+          .run();
+      }
+      tx.insert(summaryRuns)
+        .values({
+          startedAt: input.run.startedAt,
+          completedAt: input.run.completedAt,
+          recipient: input.run.recipient,
+          applicationCount: input.run.applicationCount,
+          success: input.run.success,
+        })
+        .run();
+    });
+  }
+
+  async function recordSummaryRun(run: SummaryRunRecord): Promise<void> {
+    database
+      .insert(summaryRuns)
+      .values({
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        recipient: run.recipient,
+        applicationCount: run.applicationCount,
+        success: run.success,
+      })
+      .run();
+  }
+
+  return {
+    hasBeenProcessed,
+    saveProcessed,
+    listUnsummarizedApplications,
+    completeSuccessfulSummary,
+    recordSummaryRun,
+  };
 }

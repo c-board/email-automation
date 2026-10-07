@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnv, parseGoogleAuthEnv } from "../../src/config/env.js";
+import { parseEnv, parseGoogleAuthEnv, parseSummaryEnv } from "../../src/config/env.js";
 
 const required = {
   GOOGLE_CLIENT_ID: "client-id",
@@ -39,6 +39,40 @@ describe("parseEnv", function () {
       PROTECTED_COMPANIES: "Grainger, Initech",
     });
     expect(env.protectedCompanies).toEqual(["Grainger", "Initech"]);
+  });
+});
+
+describe("parseSummaryEnv", function () {
+  it("requires a recipient and defaults the Fastmail host", function () {
+    const env = parseSummaryEnv({ SUMMARY_RECIPIENT: "alex@example.com" });
+    expect(env.dryRun).toBe(true);
+    expect(env.summaryRecipient).toBe("alex@example.com");
+    expect(env.fastmailSmtpHost).toBe("smtp.fastmail.com");
+    expect(env.fastmailSmtpPort).toBe(465);
+    expect(env.timezone).toBe("America/Chicago");
+    expect(env.fastmailUsername).toBeNull();
+  });
+
+  it("requires Fastmail credentials when dry run is off", function () {
+    expect(function () {
+      parseSummaryEnv({
+        SUMMARY_RECIPIENT: "alex@example.com",
+        DRY_RUN: "false",
+      });
+    }).toThrow(/FASTMAIL_USERNAME/);
+  });
+
+  it("does not require Google or OpenAI", function () {
+    const env = parseSummaryEnv({
+      SUMMARY_RECIPIENT: "alex@example.com",
+      DRY_RUN: "false",
+      FASTMAIL_USERNAME: "alex@fastmail.com",
+      FASTMAIL_PASSWORD: "app-password",
+    });
+    expect(env.dryRun).toBe(false);
+    if (!env.dryRun) {
+      expect(env.fastmailUsername).toBe("alex@fastmail.com");
+    }
   });
 });
 

@@ -10,4 +10,8 @@ export const LogEvent = {
   llmApiError: "llm.api_error",
   applicationStored: "application.stored",
   applicationDuplicateSkipped: "application.duplicate_skipped",
+  summaryGenerated: "summary.generated",
+  summaryDryRun: "summary.dry_run",
+  summarySent: "summary.sent",
+  summaryFailed: "summary.failed",
 } as const;

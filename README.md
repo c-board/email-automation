@@ -2,9 +2,9 @@
 
 Read-only service that loads recent Gmail messages and classifies each one with OpenAI. This version covers configuration, Gmail reads, structured classification, and a regression fixture set.
 
-It does not archive, label, delete, or send email. Gmail mutations stay disabled even when `DRY_RUN=false`. The OAuth scope is `gmail.readonly`.
+It does not archive, label, or delete Gmail. Gmail mutations stay disabled even when `DRY_RUN=false`. The OAuth scope is `gmail.readonly`.
 
-Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. Confirmations stay unsummarized until a later milestone sends the daily summary.
+Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. `pnpm run send-summary` prints one summary of unsummarized confirmations. While `DRY_RUN=true`, that command only prints and leaves the rows unsummarized. A real send needs Fastmail settings and `DRY_RUN=false`, and marks those rows summarized only after Fastmail accepts the message.
 
 ## Requirements
 
@@ -55,6 +55,12 @@ Classify new inbox messages (default 20) and print subject, classification, conf
 
 ```bash
 pnpm run process-inbox
+```
+
+Print the daily summary of confirmations that have not been summarized yet. With `DRY_RUN=true` this does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail:
+
+```bash
+pnpm run send-summary
 ```
 
 Run unit tests. These check the permitted action for each saved fixture and do not call OpenAI:

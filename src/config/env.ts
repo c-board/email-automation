@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 import { z } from "zod";
 import {
   DEFAULT_DATABASE_URL,
+  DEFAULT_FASTMAIL_SMTP_HOST,
+  DEFAULT_FASTMAIL_SMTP_PORT,
   DEFAULT_FETCH_LIMIT,
   DEFAULT_MAX_EMAIL_BODY_CHARS,
   DEFAULT_PROTECTED_COMPANIES,
@@ -32,6 +34,19 @@ const googleAuthSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
 });
 
+const summaryEnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  DRY_RUN: z.enum(["true", "false"]).default("true"),
+  TIMEZONE: z.string().min(1).default("America/Chicago"),
+  LOG_LEVEL: z.enum(logLevels).default("info"),
+  DATABASE_URL: z.string().min(1).default(DEFAULT_DATABASE_URL),
+  SUMMARY_RECIPIENT: z.string().min(1),
+  FASTMAIL_SMTP_HOST: z.string().min(1).default(DEFAULT_FASTMAIL_SMTP_HOST),
+  FASTMAIL_SMTP_PORT: z.coerce.number().int().positive().default(DEFAULT_FASTMAIL_SMTP_PORT),
+  FASTMAIL_USERNAME: z.string().min(1).optional(),
+  FASTMAIL_PASSWORD: z.string().min(1).optional(),
+});
+
 export type Env = {
   nodeEnv: "development" | "test" | "production";
   googleClientId: string;
@@ -54,6 +69,22 @@ export type GoogleAuthEnv = {
   googleClientId: string;
   googleClientSecret: string;
 };
+
+type SummaryEnvBase = {
+  nodeEnv: "development" | "test" | "production";
+  timezone: string;
+  logLevel: (typeof logLevels)[number];
+  databaseUrl: string;
+  summaryRecipient: string;
+  fastmailSmtpHost: string;
+  fastmailSmtpPort: number;
+};
+
+export type SummaryEnv = SummaryEnvBase &
+  (
+    | { dryRun: true; fastmailUsername: string | null; fastmailPassword: string | null }
+    | { dryRun: false; fastmailUsername: string; fastmailPassword: string }
+  );
 
 type EnvSource = Record<string, string | undefined>;
 
@@ -148,6 +179,46 @@ export function parseGoogleAuthEnv(source: EnvSource): GoogleAuthEnv {
   };
 }
 
+export function parseSummaryEnv(source: EnvSource): SummaryEnv {
+  const parsed = summaryEnvSchema.safeParse(blankToUndefined(source));
+  if (!parsed.success) {
+    throw new Error(formatIssues(parsed.error));
+  }
+
+  const dryRun = parsed.data.DRY_RUN === "true";
+  const fastmailUsername = parsed.data.FASTMAIL_USERNAME ?? null;
+  const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
+  const base = {
+    nodeEnv: parsed.data.NODE_ENV,
+    timezone: parsed.data.TIMEZONE,
+    logLevel: parsed.data.LOG_LEVEL,
+    databaseUrl: parsed.data.DATABASE_URL,
+    summaryRecipient: parsed.data.SUMMARY_RECIPIENT,
+    fastmailSmtpHost: parsed.data.FASTMAIL_SMTP_HOST,
+    fastmailSmtpPort: parsed.data.FASTMAIL_SMTP_PORT,
+  };
+
+  if (dryRun) {
+    return {
+      ...base,
+      dryRun: true,
+      fastmailUsername,
+      fastmailPassword,
+    };
+  }
+
+  if (fastmailUsername === null || fastmailPassword === null) {
+    throw new Error("FASTMAIL_USERNAME and FASTMAIL_PASSWORD are required when DRY_RUN=false");
+  }
+
+  return {
+    ...base,
+    dryRun: false,
+    fastmailUsername,
+    fastmailPassword,
+  };
+}
+
 export function loadEnv(): Env {
   dotenv.config({ quiet: true });
   return parseEnv(process.env);
@@ -156,4 +227,9 @@ export function loadEnv(): Env {
 export function loadGoogleAuthEnv(): GoogleAuthEnv {
   dotenv.config({ quiet: true });
   return parseGoogleAuthEnv(process.env);
+}
+
+export function loadSummaryEnv(): SummaryEnv {
+  dotenv.config({ quiet: true });
+  return parseSummaryEnv(process.env);
 }
