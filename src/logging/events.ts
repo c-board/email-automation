@@ -8,4 +8,6 @@ export const LogEvent = {
   actionBlockedProtectedCompany: "action.blocked_protected_company",
   gmailApiError: "gmail.api_error",
   llmApiError: "llm.api_error",
+  applicationStored: "application.stored",
+  applicationDuplicateSkipped: "application.duplicate_skipped",
 } as const;

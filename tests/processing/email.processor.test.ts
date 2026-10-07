@@ -120,6 +120,7 @@ describe("processInbox", function () {
   });
 
   it("takes no action when the model response is invalid", async function () {
+    const processedMessages = createInMemoryProcessedMessageLookup();
     const result = await processInbox({
       listMessageIds: async function () {
         return [{ id: "bad", threadId: null }];
@@ -130,7 +131,7 @@ describe("processInbox", function () {
       classify: async function () {
         return { ok: false as const, errorMessage: "LLM response failed validation" };
       },
-      processedMessages: createInMemoryProcessedMessageLookup(),
+      processedMessages,
       logger: pino({ level: "silent" }),
       thresholds,
       protectedCompanies: ["Grainger"],
@@ -146,5 +147,6 @@ describe("processInbox", function () {
     });
     expect(archiveEmail).not.toHaveBeenCalled();
     expect(labelAsRejection).not.toHaveBeenCalled();
+    expect(await processedMessages.hasBeenProcessed("bad")).toBe(false);
   });
 });

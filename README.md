@@ -4,7 +4,7 @@ Read-only service that loads recent Gmail messages and classifies each one with 
 
 It does not archive, label, delete, or send email. Gmail mutations stay disabled even when `DRY_RUN=false`. The OAuth scope is `gmail.readonly`.
 
-Until message ids are stored in a database, each run classifies the latest inbox messages again.
+Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. Confirmations stay unsummarized until a later milestone sends the daily summary.
 
 ## Requirements
 
@@ -51,7 +51,7 @@ Confirm configuration and logging:
 pnpm start
 ```
 
-Classify the latest inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later:
+Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped:
 
 ```bash
 pnpm run process-inbox

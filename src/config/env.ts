@@ -1,6 +1,11 @@
 import dotenv from "dotenv";
 import { z } from "zod";
-import { DEFAULT_FETCH_LIMIT, DEFAULT_MAX_EMAIL_BODY_CHARS, DEFAULT_PROTECTED_COMPANIES } from "./constants.js";
+import {
+  DEFAULT_DATABASE_URL,
+  DEFAULT_FETCH_LIMIT,
+  DEFAULT_MAX_EMAIL_BODY_CHARS,
+  DEFAULT_PROTECTED_COMPANIES,
+} from "./constants.js";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace"] as const;
 
@@ -19,6 +24,7 @@ const envSchema = z.object({
   MAX_EMAIL_BODY_CHARS: z.coerce.number().int().positive().default(DEFAULT_MAX_EMAIL_BODY_CHARS),
   PROTECTED_COMPANIES: z.string().optional(),
   LOG_LEVEL: z.enum(logLevels).default("info"),
+  DATABASE_URL: z.string().min(1).default(DEFAULT_DATABASE_URL),
 });
 
 const googleAuthSchema = z.object({
@@ -41,6 +47,7 @@ export type Env = {
   maxEmailBodyChars: number;
   protectedCompanies: string[];
   logLevel: (typeof logLevels)[number];
+  databaseUrl: string;
 };
 
 export type GoogleAuthEnv = {
@@ -126,6 +133,7 @@ export function parseEnv(source: EnvSource): Env {
     maxEmailBodyChars: parsed.data.MAX_EMAIL_BODY_CHARS,
     protectedCompanies: parseProtectedCompanies(parsed.data.PROTECTED_COMPANIES),
     logLevel: parsed.data.LOG_LEVEL,
+    databaseUrl: parsed.data.DATABASE_URL,
   };
 }
 

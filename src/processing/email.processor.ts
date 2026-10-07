@@ -6,7 +6,7 @@ import type { EmailMessage, InboxMessageRef } from "../types/email.types.js";
 import type { Classification } from "../types/classification.types.js";
 import type { ClassifierResult } from "../ai/email-classifier.js";
 import type { ConfidenceThresholds } from "./confidence-gate.js";
-import type { ProcessedMessageLookup } from "./processed-message-lookup.js";
+import type { ProcessedMessageStore } from "../database/workflow-store.js";
 import { describeProposedAction, proposeAction, type ProposedAction } from "./proposed-action.js";
 
 export type EmailProcessingOutcome = {
@@ -33,7 +33,7 @@ export type InboxProcessorDeps = {
   listMessageIds: () => Promise<InboxMessageRef[]>;
   readMessage: (id: string) => Promise<EmailMessage>;
   classify: (email: EmailMessage) => Promise<ClassifierResult>;
-  processedMessages: ProcessedMessageLookup;
+  processedMessages: ProcessedMessageStore;
   logger: Logger;
   thresholds: ConfidenceThresholds;
   protectedCompanies: readonly string[];
@@ -205,11 +205,52 @@ export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProce
     const result = await deps.classify(email);
     const classified = classifyOutcome(email, result, deps);
     outcomes.push(classified.outcome);
+    logOutcome(deps.logger, email, classified.outcome, classified, deps.dryRun);
     if (!result.ok) {
       failed += 1;
+      continue;
     }
-    logOutcome(deps.logger, email, classified.outcome, classified, deps.dryRun);
-    await deps.processedMessages.markProcessed(ref.id);
+
+    const saved = await deps.processedMessages.saveProcessed({
+      gmailMessageId: email.gmailMessageId,
+      gmailThreadId: email.gmailThreadId,
+      classification: result.classification.classification,
+      confidence: result.classification.confidence,
+      application:
+        classified.outcome.proposedAction.kind === "include_in_summary"
+          ? {
+              company: result.classification.company,
+              position: result.classification.position,
+              applicationDate: result.classification.applicationDate,
+            }
+          : null,
+    });
+
+    if (saved.applicationStored) {
+      deps.logger.info(
+        {
+          event: LogEvent.applicationStored,
+          gmailMessageId: email.gmailMessageId,
+          company: result.classification.company,
+          position: result.classification.position,
+          applicationDate: result.classification.applicationDate,
+        },
+        "Application stored",
+      );
+    }
+
+    if (saved.duplicateApplication) {
+      deps.logger.info(
+        {
+          event: LogEvent.applicationDuplicateSkipped,
+          gmailMessageId: email.gmailMessageId,
+          company: result.classification.company,
+          position: result.classification.position,
+          applicationDate: result.classification.applicationDate,
+        },
+        "Duplicate application skipped",
+      );
+    }
   }
 
   return {

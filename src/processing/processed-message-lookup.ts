@@ -1,19 +1,22 @@
-export type ProcessedMessageLookup = {
-  hasBeenProcessed: (gmailMessageId: string) => Promise<boolean>;
-  markProcessed: (gmailMessageId: string) => Promise<void>;
-};
+import type { ProcessedMessageStore, SaveProcessedInput } from "../database/workflow-store.js";
 
-// Remembers ids for the current process only. Database persistence replaces this in a later milestone.
-export function createInMemoryProcessedMessageLookup(): ProcessedMessageLookup {
+export function createInMemoryProcessedMessageLookup(): ProcessedMessageStore {
   const seen = new Set<string>();
 
   async function hasBeenProcessed(gmailMessageId: string): Promise<boolean> {
     return seen.has(gmailMessageId);
   }
 
-  async function markProcessed(gmailMessageId: string): Promise<void> {
-    seen.add(gmailMessageId);
+  async function saveProcessed(input: SaveProcessedInput): Promise<{
+    applicationStored: boolean;
+    duplicateApplication: boolean;
+  }> {
+    seen.add(input.gmailMessageId);
+    return {
+      applicationStored: input.application !== null,
+      duplicateApplication: false,
+    };
   }
 
-  return { hasBeenProcessed, markProcessed };
+  return { hasBeenProcessed, saveProcessed };
 }

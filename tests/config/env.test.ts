@@ -20,6 +20,7 @@ describe("parseEnv", function () {
     expect(env.maxEmailBodyChars).toBe(30_000);
     expect(env.timezone).toBe("America/Chicago");
     expect(env.nodeEnv).toBe("development");
+    expect(env.databaseUrl).toBe("file:./data/email-automation.sqlite");
   });
 
   it("rejects a review threshold that is not below the automatic threshold", function () {

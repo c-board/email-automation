@@ -8,8 +8,9 @@ import { formatConfigError, loadEnv } from "../src/config/env.js";
 import { createLogger } from "../src/logging/logger.js";
 import { LogEvent } from "../src/logging/events.js";
 import { errorText } from "../src/logging/sanitize.js";
+import { createDatabase } from "../src/database/database.js";
+import { createSqliteWorkflowStore } from "../src/database/workflow-store.js";
 import { processInbox } from "../src/processing/email.processor.js";
-import { createInMemoryProcessedMessageLookup } from "../src/processing/processed-message-lookup.js";
 import type { EmailMessage } from "../src/types/email.types.js";
 
 async function main(): Promise<void> {
@@ -22,7 +23,8 @@ async function main(): Promise<void> {
   });
   const gmail = createGmailReadClient(auth);
   const openai = createOpenAiClient(env.openAiApiKey);
-  const processedMessages = createInMemoryProcessedMessageLookup();
+  const database = createDatabase(env.databaseUrl);
+  const processedMessages = createSqliteWorkflowStore(database);
 
   const result = await processInbox({
     listMessageIds: function () {
