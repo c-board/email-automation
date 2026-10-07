@@ -2,7 +2,7 @@ import { formatConfigError, loadSummaryEnv } from "../src/config/env.js";
 import { createDatabase } from "../src/database/database.js";
 import { createSqliteWorkflowStore } from "../src/database/workflow-store.js";
 import { createOAuthClient } from "../src/gmail/gmail.auth.js";
-import { createGmailReadClient } from "../src/gmail/gmail.client.js";
+import { createGmailMutationClient, createGmailReadClient } from "../src/gmail/gmail.client.js";
 import { parseGmailMessage } from "../src/gmail/gmail.reader.js";
 import { createLogger } from "../src/logging/logger.js";
 import { errorText } from "../src/logging/sanitize.js";
@@ -14,13 +14,12 @@ async function main(): Promise<void> {
   const logger = await createLogger(env);
   const database = createDatabase(env.databaseUrl);
   const store = createSqliteWorkflowStore(database);
-  const gmail = createGmailReadClient(
-    createOAuthClient({
-      clientId: env.googleClientId,
-      clientSecret: env.googleClientSecret,
-      refreshToken: env.googleRefreshToken,
-    }),
-  );
+  const auth = createOAuthClient({
+    clientId: env.googleClientId,
+    clientSecret: env.googleClientSecret,
+    refreshToken: env.googleRefreshToken,
+  });
+  const gmail = createGmailReadClient(auth);
   const mailer = env.dryRun
     ? null
     : createFastmailMailer({
@@ -52,6 +51,7 @@ async function main(): Promise<void> {
         body: parsed.body,
       };
     },
+    gmail: createGmailMutationClient(auth),
   });
 
   if (result.status === "failed") {

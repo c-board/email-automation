@@ -1,4 +1,4 @@
-import { GMAIL_MUTATIONS_DISABLED_MESSAGE } from "../config/constants.js";
+import type { GmailMutationClient } from "./gmail.client.js";
 import type { Logger } from "../logging/logger.js";
 import { LogEvent } from "../logging/events.js";
 import { isProtectedCompany } from "../safety/protected-companies.js";
@@ -11,13 +11,6 @@ export class ProtectedCompanyActionError extends Error {
         : "Blocked rejection label attempt for protected company",
     );
     this.name = "ProtectedCompanyActionError";
-  }
-}
-
-export class GmailMutationDisabledError extends Error {
-  constructor() {
-    super(GMAIL_MUTATIONS_DISABLED_MESSAGE);
-    this.name = "GmailMutationDisabledError";
   }
 }
 
@@ -59,10 +52,11 @@ function assertNotProtected(
   throw new ProtectedCompanyActionError(action);
 }
 
-function logDryRunAction(
+function logGmailAction(
   email: GmailActionTarget,
   logger: Logger | undefined,
   event: (typeof LogEvent)[keyof typeof LogEvent],
+  dryRun: boolean,
   message: string,
 ): void {
   logger?.info(
@@ -70,7 +64,7 @@ function logDryRunAction(
       event,
       gmailMessageId: email.gmailMessageId,
       subject: email.subject,
-      dryRun: true,
+      dryRun,
     },
     message,
   );
@@ -80,26 +74,30 @@ export async function archiveEmail(
   email: GmailActionTarget,
   protectedCompanies: readonly string[],
   dryRun: boolean,
-  logger?: Logger,
+  logger: Logger | undefined,
+  gmail: GmailMutationClient,
 ): Promise<void> {
   assertNotProtected(email, protectedCompanies, "archive", logger);
   if (dryRun) {
-    logDryRunAction(email, logger, LogEvent.emailArchived, "Email would be archived");
+    logGmailAction(email, logger, LogEvent.emailArchived, true, "Email would be archived");
     return;
   }
-  throw new GmailMutationDisabledError();
+  await gmail.archiveMessage(email.gmailMessageId);
+  logGmailAction(email, logger, LogEvent.emailArchived, false, "Email archived");
 }
 
 export async function labelAsRejection(
   email: GmailActionTarget,
   protectedCompanies: readonly string[],
   dryRun: boolean,
-  logger?: Logger,
+  logger: Logger | undefined,
+  gmail: GmailMutationClient,
 ): Promise<void> {
   assertNotProtected(email, protectedCompanies, "label", logger);
   if (dryRun) {
-    logDryRunAction(email, logger, LogEvent.rejectionLabeled, "Email would be labeled as a rejection");
+    logGmailAction(email, logger, LogEvent.rejectionLabeled, true, "Email would be labeled as a rejection");
     return;
   }
-  throw new GmailMutationDisabledError();
+  await gmail.labelMessageAsRejection(email.gmailMessageId);
+  logGmailAction(email, logger, LogEvent.rejectionLabeled, false, "Email labeled as a rejection");
 }

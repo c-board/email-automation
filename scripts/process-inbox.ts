@@ -1,5 +1,5 @@
 import { createOAuthClient } from "../src/gmail/gmail.auth.js";
-import { createGmailReadClient } from "../src/gmail/gmail.client.js";
+import { createGmailMutationClient, createGmailReadClient } from "../src/gmail/gmail.client.js";
 import { parseGmailMessage } from "../src/gmail/gmail.reader.js";
 import { listRecentInboxMessageIds } from "../src/gmail/gmail.search.js";
 import { classifyEmail } from "../src/ai/email-classifier.js";
@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     },
     protectedCompanies: env.protectedCompanies,
     dryRun: env.dryRun,
+    gmail: createGmailMutationClient(auth),
   });
 
   logger.info(

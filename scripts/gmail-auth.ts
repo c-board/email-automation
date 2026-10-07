@@ -1,5 +1,5 @@
 import http from "node:http";
-import { GMAIL_OAUTH_HOST, GMAIL_OAUTH_PORT, GMAIL_OAUTH_REDIRECT_PATH, GMAIL_OAUTH_TIMEOUT_MS, GMAIL_READONLY_SCOPE } from "../src/config/constants.js";
+import { GMAIL_MODIFY_SCOPE, GMAIL_OAUTH_HOST, GMAIL_OAUTH_PORT, GMAIL_OAUTH_REDIRECT_PATH, GMAIL_OAUTH_TIMEOUT_MS } from "../src/config/constants.js";
 import { formatConfigError, loadGoogleAuthEnv } from "../src/config/env.js";
 import { createOAuthClient } from "../src/gmail/gmail.auth.js";
 import { errorText } from "../src/logging/sanitize.js";
@@ -76,10 +76,10 @@ async function main(): Promise<void> {
   const url = client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: [GMAIL_READONLY_SCOPE],
+    scope: [GMAIL_MODIFY_SCOPE],
   });
 
-  console.log("Open this URL in a browser and approve read-only Gmail access:\n");
+  console.log("Open this URL in a browser and approve Gmail access to read, label, and archive messages:\n");
   console.log(url);
   console.log("\nWaiting for the redirect...");
 

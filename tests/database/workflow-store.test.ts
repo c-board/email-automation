@@ -5,8 +5,18 @@ import type { EmailClassification } from "../../src/ai/classifier.schema.js";
 import { createDatabase } from "../../src/database/database.js";
 import { applications, processedMessages } from "../../src/database/schema.js";
 import { createSqliteWorkflowStore } from "../../src/database/workflow-store.js";
+import type { GmailMutationClient } from "../../src/gmail/gmail.client.js";
 import { processInbox } from "../../src/processing/email.processor.js";
 import type { EmailMessage } from "../../src/types/email.types.js";
+
+const gmail: GmailMutationClient = {
+  labelMessageAsRejection: async function () {
+    throw new Error("dry run must not label");
+  },
+  archiveMessage: async function () {
+    throw new Error("dry run must not archive");
+  },
+};
 
 const thresholds = {
   autoActionConfidence: 0.95,
@@ -147,6 +157,7 @@ describe("processInbox persistence", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: true,
+      gmail,
     });
     expect(await store.hasBeenProcessed("bad")).toBe(false);
   });
@@ -178,6 +189,7 @@ describe("processInbox persistence", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: true,
+      gmail,
     });
 
     const rows = database.select().from(applications).all();

@@ -1,9 +1,6 @@
 import type { SummaryStore, SummaryRunRecord, UnsummarizedApplication } from "../database/workflow-store.js";
-import {
-  archiveEmail,
-  GmailMutationDisabledError,
-  ProtectedCompanyActionError,
-} from "../gmail/gmail.actions.js";
+import type { GmailMutationClient } from "../gmail/gmail.client.js";
+import { archiveEmail, ProtectedCompanyActionError } from "../gmail/gmail.actions.js";
 import type { Logger } from "../logging/logger.js";
 import { LogEvent } from "../logging/events.js";
 import { errorText } from "../logging/sanitize.js";
@@ -33,6 +30,7 @@ export type SendDailySummaryDeps = {
   print: (text: string) => void;
   protectedCompanies: readonly string[];
   readConfirmation: (gmailMessageId: string) => Promise<ConfirmationSource>;
+  gmail: GmailMutationClient;
 };
 
 function summaryRun(input: {
@@ -77,22 +75,20 @@ async function archiveIncludedConfirmations(
         deps.protectedCompanies,
         deps.dryRun,
         deps.logger,
+        deps.gmail,
       );
     } catch (error: unknown) {
       if (error instanceof ProtectedCompanyActionError) {
         continue;
       }
-      if (error instanceof GmailMutationDisabledError) {
-        deps.logger.warn(
-          {
-            gmailMessageId: application.gmailMessageId,
-            errorMessage: error.message,
-          },
-          error.message,
-        );
-        continue;
-      }
-      throw error;
+      deps.logger.error(
+        {
+          event: LogEvent.gmailApiError,
+          gmailMessageId: application.gmailMessageId,
+          errorMessage: errorText(error),
+        },
+        "Gmail API error",
+      );
     }
   }
 }

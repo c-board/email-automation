@@ -7,9 +7,9 @@ import type { Classification } from "../types/classification.types.js";
 import type { ClassifierResult } from "../ai/email-classifier.js";
 import type { ConfidenceThresholds } from "./confidence-gate.js";
 import type { ProcessedMessageStore } from "../database/workflow-store.js";
+import type { GmailMutationClient } from "../gmail/gmail.client.js";
 import {
   archiveEmail,
-  GmailMutationDisabledError,
   labelAsRejection,
   ProtectedCompanyActionError,
   type GmailActionTarget,
@@ -45,6 +45,7 @@ export type InboxProcessorDeps = {
   thresholds: ConfidenceThresholds;
   protectedCompanies: readonly string[];
   dryRun: boolean;
+  gmail: GmailMutationClient;
 };
 
 type ClassifiedEmail = {
@@ -167,25 +168,8 @@ async function applyRejectionAction(email: EmailMessage, company: string | null,
     body: email.body,
     company,
   };
-  try {
-    await labelAsRejection(target, deps.protectedCompanies, deps.dryRun, deps.logger);
-    await archiveEmail(target, deps.protectedCompanies, deps.dryRun, deps.logger);
-  } catch (error: unknown) {
-    if (error instanceof ProtectedCompanyActionError) {
-      return;
-    }
-    if (error instanceof GmailMutationDisabledError) {
-      deps.logger.warn(
-        {
-          gmailMessageId: email.gmailMessageId,
-          errorMessage: error.message,
-        },
-        error.message,
-      );
-      return;
-    }
-    throw error;
-  }
+  await labelAsRejection(target, deps.protectedCompanies, deps.dryRun, deps.logger, deps.gmail);
+  await archiveEmail(target, deps.protectedCompanies, deps.dryRun, deps.logger, deps.gmail);
 }
 
 export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProcessingResult> {
@@ -247,6 +231,25 @@ export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProce
       continue;
     }
 
+    if (classified.outcome.proposedAction.kind === "label_and_archive_rejection") {
+      try {
+        await applyRejectionAction(email, result.classification.company, deps);
+      } catch (error: unknown) {
+        if (!(error instanceof ProtectedCompanyActionError)) {
+          failed += 1;
+          deps.logger.error(
+            {
+              event: LogEvent.gmailApiError,
+              gmailMessageId: email.gmailMessageId,
+              errorMessage: errorText(error),
+            },
+            "Gmail API error",
+          );
+          continue;
+        }
+      }
+    }
+
     const saved = await deps.processedMessages.saveProcessed({
       gmailMessageId: email.gmailMessageId,
       gmailThreadId: email.gmailThreadId,
@@ -286,10 +289,6 @@ export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProce
         },
         "Duplicate application skipped",
       );
-    }
-
-    if (classified.outcome.proposedAction.kind === "label_and_archive_rejection") {
-      await applyRejectionAction(email, result.classification.company, deps);
     }
   }
 

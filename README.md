@@ -2,7 +2,7 @@
 
 Read-only service that loads recent Gmail messages and classifies each one with OpenAI. This version covers configuration, Gmail reads, structured classification, and a regression fixture set.
 
-It does not archive, label, or delete Gmail. Those actions are only logged. Gmail mutations stay disabled even when `DRY_RUN=false`. The OAuth scope is `gmail.readonly`.
+With `DRY_RUN=true`, label and archive actions are only logged. Set `DRY_RUN=false` to label an unprotected rejection `Job Rejections` and archive it, and to archive a confirmation after its summary is sent. Messages are never deleted. Grainger stays blocked. The OAuth scope is `gmail.modify`. An existing read-only refresh token cannot make these changes.
 
 Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. `pnpm run send-summary` prints one summary of unsummarized confirmations. While `DRY_RUN=true`, that command only prints and leaves the rows unsummarized. A real send needs Fastmail settings and `DRY_RUN=false`, and marks those rows summarized only after Fastmail accepts the message.
 
@@ -33,7 +33,7 @@ http://127.0.0.1:42813/oauth2callback
 
 Enable the Gmail API for the project. Put the client id and secret in `.env`.
 
-4. Grant read-only access and print a refresh token:
+4. Grant Gmail access and print a refresh token. If you already authorized the read-only scope, run this again and replace `GOOGLE_REFRESH_TOKEN` before setting `DRY_RUN=false`:
 
 ```bash
 pnpm run gmail-auth
@@ -51,13 +51,13 @@ Confirm configuration and logging:
 pnpm start
 ```
 
-Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. An unprotected rejection is logged as a future `Job Rejections` label and archive. Gmail is not changed:
+Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. With `DRY_RUN=true`, an unprotected rejection is logged as a future `Job Rejections` label and archive. With `DRY_RUN=false`, that label is applied and the message is archived:
 
 ```bash
 pnpm run process-inbox
 ```
 
-Print the daily summary of confirmations that have not been summarized yet. This re-reads those Gmail messages and logs which ones would be archived. Grainger stays blocked. With `DRY_RUN=true` it does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail. A real send still does not change Gmail. OpenAI is not required for this command:
+Print the daily summary of confirmations that have not been summarized yet. This re-reads those Gmail messages. Grainger stays blocked. With `DRY_RUN=true` it logs which confirmations would be archived and does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail and archive the unprotected confirmations after the send succeeds. OpenAI is not required for this command:
 
 ```bash
 pnpm run send-summary
@@ -77,7 +77,7 @@ pnpm run eval-fixtures
 
 ## Safety
 
-- Confidence at or above `AUTO_ACTION_CONFIDENCE` (default `0.95`) logs the Gmail action that would be taken. Nothing is labeled or archived yet.
+- Confidence at or above `AUTO_ACTION_CONFIDENCE` (default `0.95`) is required before a label or archive. `DRY_RUN=true` only logs that action.
 - Confidence from `REVIEW_CONFIDENCE` (default `0.80`) up to the automatic threshold is logged, with no Gmail change.
 - Confidence below the review threshold is treated as `UNKNOWN`.
 - An invalid model response produces no action.

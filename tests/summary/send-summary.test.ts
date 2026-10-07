@@ -8,6 +8,7 @@ import { LogEvent } from "../../src/logging/events.js";
 import type { Logger } from "../../src/logging/logger.js";
 import { SUMMARY_FIELD_NOT_SPECIFIED, formatSummary } from "../../src/summary/format-summary.js";
 import type { SummaryMail, SummaryMailer } from "../../src/summary/fastmail.js";
+import type { GmailMutationClient } from "../../src/gmail/gmail.client.js";
 import { sendDailySummary, type ConfirmationSource } from "../../src/summary/send-daily-summary.js";
 
 const headerNow = new Date("2026-10-07T04:00:00.000Z");
@@ -51,6 +52,17 @@ function readConfirmation(): Promise<ConfirmationSource> {
 
 function unreadConfirmation(): Promise<ConfirmationSource> {
   return Promise.reject(new Error("should not re-read a confirmation"));
+}
+
+function idleGmail(): GmailMutationClient {
+  return {
+    labelMessageAsRejection: async function () {
+      throw new Error("summary must not label");
+    },
+    archiveMessage: async function () {
+      throw new Error("summary must not archive");
+    },
+  };
 }
 
 function captureLogger(): { logger: Logger; records: Array<Record<string, unknown>> } {
@@ -120,6 +132,7 @@ describe("sendDailySummary", function () {
       },
       protectedCompanies: ["Grainger"],
       readConfirmation: unreadConfirmation,
+      gmail: idleGmail(),
     });
 
     expect(result).toEqual({ status: "empty", applicationCount: 0 });
@@ -167,6 +180,7 @@ describe("sendDailySummary", function () {
       },
       protectedCompanies: ["Grainger"],
       readConfirmation,
+      gmail: idleGmail(),
     });
 
     expect(result).toEqual({ status: "dry_run", applicationCount: 2 });
@@ -217,6 +231,15 @@ describe("sendDailySummary", function () {
       createdAt: "2026-10-06T15:00:00.000Z",
     });
 
+    const archived: string[] = [];
+    const recordingGmail: GmailMutationClient = {
+      labelMessageAsRejection: async function () {
+        throw new Error("summary must not label");
+      },
+      archiveMessage: async function (gmailMessageId: string) {
+        archived.push(gmailMessageId);
+      },
+    };
     const reads: string[] = [];
     const first = await sendDailySummary({
       store,
@@ -235,6 +258,7 @@ describe("sendDailySummary", function () {
         reads.push(gmailMessageId);
         return confirmationSource;
       },
+      gmail: recordingGmail,
     });
 
     expect(first.status).toBe("sent");
@@ -289,15 +313,14 @@ describe("sendDailySummary", function () {
         reads.push(gmailMessageId);
         return confirmationSource;
       },
+      gmail: recordingGmail,
     });
 
     expect(second).toEqual({ status: "sent", applicationCount: 1 });
     expect(printed[0]).toContain("Company: Mux");
     expect(printed[0]).not.toContain("Grainger");
     expect(reads).toEqual(["grainger", "mux"]);
-    expect(secondLogs.records.some(function (record) {
-      return record.msg === "Gmail mutations are not enabled";
-    })).toBe(true);
+    expect(archived).toEqual(["mux"]);
     expect(database.select().from(summaryRuns).all()).toHaveLength(2);
   });
 
@@ -330,6 +353,7 @@ describe("sendDailySummary", function () {
       },
       protectedCompanies: ["Grainger"],
       readConfirmation: unreadConfirmation,
+      gmail: idleGmail(),
     });
 
     expect(result).toEqual({ status: "failed", applicationCount: 1 });
@@ -373,6 +397,7 @@ describe("sendDailySummary", function () {
       readConfirmation: async function () {
         throw new Error("Gmail unavailable");
       },
+      gmail: idleGmail(),
     });
 
     expect(result).toEqual({ status: "dry_run", applicationCount: 1 });
@@ -383,5 +408,48 @@ describe("sendDailySummary", function () {
       return record.event === LogEvent.emailArchived;
     })).toBe(false);
     expect(database.select().from(applications).all()[0]?.summarized).toBe(false);
+  });
+
+  it("keeps a sent summary when one archive fails", async function () {
+    const { database, store } = openStore();
+    const captured = captureLogger();
+    insertApplication(database, {
+      gmailMessageId: "mux",
+      company: "Mux",
+      position: "Engineer",
+      applicationDate: "2026-10-07",
+      summarized: false,
+      createdAt: "2026-10-07T12:00:00.000Z",
+    });
+
+    const result = await sendDailySummary({
+      store,
+      mailer: recordingMailer([]),
+      dryRun: false,
+      recipient: "alex@example.com",
+      fromAddress: "alex@fastmail.com",
+      timeZone: "America/Chicago",
+      now: headerNow,
+      logger: captured.logger,
+      print: function () {
+        return undefined;
+      },
+      protectedCompanies: ["Grainger"],
+      readConfirmation,
+      gmail: {
+        labelMessageAsRejection: async function () {
+          throw new Error("summary must not label");
+        },
+        archiveMessage: async function () {
+          throw new Error("Gmail archive failed");
+        },
+      },
+    });
+
+    expect(result.status).toBe("sent");
+    expect(database.select().from(applications).all()[0]?.summarized).toBe(true);
+    expect(captured.records.some(function (record) {
+      return record.event === LogEvent.gmailApiError;
+    })).toBe(true);
   });
 });

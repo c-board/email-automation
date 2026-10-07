@@ -1,46 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
-const modify = vi.hoisted(function () {
-  return vi.fn();
-});
-const trash = vi.hoisted(function () {
-  return vi.fn();
-});
-const createLabel = vi.hoisted(function () {
-  return vi.fn();
-});
-
-vi.mock("googleapis", function () {
-  return {
-    google: {
-      gmail: function () {
-        return {
-          users: {
-            messages: {
-              modify,
-              trash,
-              batchModify: modify,
-            },
-            labels: {
-              create: createLabel,
-            },
-          },
-        };
-      },
-      auth: {
-        OAuth2: vi.fn(),
-      },
-    },
-  };
-});
-
-import {
-  archiveEmail,
-  GmailMutationDisabledError,
-  labelAsRejection,
-  ProtectedCompanyActionError,
-} from "../../src/gmail/gmail.actions.js";
+import { archiveEmail, labelAsRejection, ProtectedCompanyActionError } from "../../src/gmail/gmail.actions.js";
 import type { GmailActionTarget } from "../../src/gmail/gmail.actions.js";
+import type { GmailMutationClient } from "../../src/gmail/gmail.client.js";
 
 const grainger: GmailActionTarget = {
   gmailMessageId: "g-1",
@@ -58,29 +19,54 @@ const other: GmailActionTarget = {
   company: "Mux",
 };
 
+function mutationClient(): GmailMutationClient & {
+  labelMessageAsRejection: ReturnType<typeof vi.fn>;
+  archiveMessage: ReturnType<typeof vi.fn>;
+} {
+  return {
+    labelMessageAsRejection: vi.fn(async function () {
+      return undefined;
+    }),
+    archiveMessage: vi.fn(async function () {
+      return undefined;
+    }),
+  };
+}
+
 describe("gmail actions", function () {
   it("blocks a protected company before any Gmail write", async function () {
-    await expect(archiveEmail(grainger, ["Grainger"], false)).rejects.toBeInstanceOf(ProtectedCompanyActionError);
-    await expect(labelAsRejection(grainger, ["Grainger"], false)).rejects.toBeInstanceOf(ProtectedCompanyActionError);
-    expect(modify).not.toHaveBeenCalled();
-    expect(trash).not.toHaveBeenCalled();
-    expect(createLabel).not.toHaveBeenCalled();
+    const gmail = mutationClient();
+    await expect(archiveEmail(grainger, ["Grainger"], false, undefined, gmail)).rejects.toBeInstanceOf(
+      ProtectedCompanyActionError,
+    );
+    await expect(labelAsRejection(grainger, ["Grainger"], false, undefined, gmail)).rejects.toBeInstanceOf(
+      ProtectedCompanyActionError,
+    );
+    expect(gmail.labelMessageAsRejection).not.toHaveBeenCalled();
+    expect(gmail.archiveMessage).not.toHaveBeenCalled();
   });
 
   it("logs a dry run and does not call Gmail", async function () {
-    await expect(archiveEmail(other, ["Grainger"], true)).resolves.toBeUndefined();
-    await expect(labelAsRejection(other, ["Grainger"], true)).resolves.toBeUndefined();
-    await expect(archiveEmail(grainger, ["Grainger"], true)).rejects.toBeInstanceOf(ProtectedCompanyActionError);
-    expect(modify).not.toHaveBeenCalled();
-    expect(trash).not.toHaveBeenCalled();
-    expect(createLabel).not.toHaveBeenCalled();
+    const gmail = mutationClient();
+    await expect(archiveEmail(other, ["Grainger"], true, undefined, gmail)).resolves.toBeUndefined();
+    await expect(labelAsRejection(other, ["Grainger"], true, undefined, gmail)).resolves.toBeUndefined();
+    await expect(archiveEmail(grainger, ["Grainger"], true, undefined, gmail)).rejects.toBeInstanceOf(
+      ProtectedCompanyActionError,
+    );
+    expect(gmail.labelMessageAsRejection).not.toHaveBeenCalled();
+    expect(gmail.archiveMessage).not.toHaveBeenCalled();
   });
 
-  it("refuses mutations even when dry run is disabled", async function () {
-    await expect(archiveEmail(other, ["Grainger"], false)).rejects.toBeInstanceOf(GmailMutationDisabledError);
-    await expect(labelAsRejection(other, ["Grainger"], false)).rejects.toBeInstanceOf(GmailMutationDisabledError);
-    expect(modify).not.toHaveBeenCalled();
-    expect(trash).not.toHaveBeenCalled();
-    expect(createLabel).not.toHaveBeenCalled();
+  it("labels and then archives an unprotected message when dry run is off", async function () {
+    const gmail = mutationClient();
+    await labelAsRejection(other, ["Grainger"], false, undefined, gmail);
+    await archiveEmail(other, ["Grainger"], false, undefined, gmail);
+    expect(gmail.labelMessageAsRejection).toHaveBeenCalledTimes(1);
+    expect(gmail.labelMessageAsRejection).toHaveBeenCalledWith("m-1");
+    expect(gmail.archiveMessage).toHaveBeenCalledTimes(1);
+    expect(gmail.archiveMessage).toHaveBeenCalledWith("m-1");
+    const labelOrder = gmail.labelMessageAsRejection.mock.invocationCallOrder[0];
+    const archiveOrder = gmail.archiveMessage.mock.invocationCallOrder[0];
+    expect(labelOrder).toBeLessThan(archiveOrder ?? Number.POSITIVE_INFINITY);
   });
 });

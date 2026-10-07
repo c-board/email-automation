@@ -4,7 +4,8 @@ import type { EmailMessage } from "../../src/types/email.types.js";
 import type { EmailClassification } from "../../src/ai/classifier.schema.js";
 import { createInMemoryProcessedMessageLookup } from "../../src/processing/processed-message-lookup.js";
 import { processInbox } from "../../src/processing/email.processor.js";
-import { archiveEmail, GmailMutationDisabledError, labelAsRejection } from "../../src/gmail/gmail.actions.js";
+import { archiveEmail, labelAsRejection } from "../../src/gmail/gmail.actions.js";
+import type { GmailMutationClient } from "../../src/gmail/gmail.client.js";
 
 vi.mock("../../src/gmail/gmail.actions.js", async function () {
   const actual = await vi.importActual<typeof import("../../src/gmail/gmail.actions.js")>(
@@ -16,6 +17,15 @@ vi.mock("../../src/gmail/gmail.actions.js", async function () {
     labelAsRejection: vi.fn(),
   };
 });
+
+const gmail: GmailMutationClient = {
+  labelMessageAsRejection: async function () {
+    return undefined;
+  },
+  archiveMessage: async function () {
+    return undefined;
+  },
+};
 
 const thresholds = {
   autoActionConfidence: 0.95,
@@ -78,6 +88,7 @@ describe("processInbox", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: true,
+      gmail,
     });
 
     expect(classify).toHaveBeenCalledTimes(2);
@@ -114,6 +125,7 @@ describe("processInbox", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: true,
+      gmail,
     });
 
     expect(classify).toHaveBeenCalledTimes(1);
@@ -140,6 +152,7 @@ describe("processInbox", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: false,
+      gmail,
     });
 
     expect(result.failed).toBe(1);
@@ -174,6 +187,7 @@ describe("processInbox", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: true,
+      gmail,
     });
 
     expect(labelAsRejection).toHaveBeenCalledTimes(1);
@@ -184,8 +198,8 @@ describe("processInbox", function () {
     expect(await processedMessages.hasBeenProcessed("reject")).toBe(true);
   });
 
-  it("keeps a rejection saved when Gmail mutations are disabled", async function () {
-    vi.mocked(labelAsRejection).mockRejectedValue(new GmailMutationDisabledError());
+  it("does not save a rejection when Gmail rejects the label", async function () {
+    vi.mocked(labelAsRejection).mockRejectedValue(new Error("Gmail rejected the label"));
     const processedMessages = createInMemoryProcessedMessageLookup();
     const result = await processInbox({
       listMessageIds: async function () {
@@ -205,11 +219,11 @@ describe("processInbox", function () {
       thresholds,
       protectedCompanies: ["Grainger"],
       dryRun: false,
+      gmail,
     });
 
-    expect(result.failed).toBe(0);
-    expect(result.classified).toBe(1);
+    expect(result.failed).toBe(1);
     expect(archiveEmail).not.toHaveBeenCalled();
-    expect(await processedMessages.hasBeenProcessed("reject")).toBe(true);
+    expect(await processedMessages.hasBeenProcessed("reject")).toBe(false);
   });
 });
