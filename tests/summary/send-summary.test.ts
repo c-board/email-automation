@@ -59,6 +59,9 @@ function idleGmail(): GmailMutationClient {
     labelMessageAsRejection: async function () {
       throw new Error("summary must not label");
     },
+    labelMessageAsConfirmation: async function () {
+      throw new Error("summary must not label");
+    },
     archiveMessage: async function () {
       throw new Error("summary must not archive");
     },
@@ -234,6 +237,9 @@ describe("sendDailySummary", function () {
     const archived: string[] = [];
     const recordingGmail: GmailMutationClient = {
       labelMessageAsRejection: async function () {
+        throw new Error("summary must not label");
+      },
+      labelMessageAsConfirmation: async function () {
         throw new Error("summary must not label");
       },
       archiveMessage: async function (gmailMessageId: string) {
@@ -438,6 +444,9 @@ describe("sendDailySummary", function () {
       readConfirmation,
       gmail: {
         labelMessageAsRejection: async function () {
+          throw new Error("summary must not label");
+        },
+        labelMessageAsConfirmation: async function () {
           throw new Error("summary must not label");
         },
         archiveMessage: async function () {

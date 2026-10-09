@@ -10,6 +10,7 @@ import type { ProcessedMessageStore } from "../database/workflow-store.js";
 import type { GmailMutationClient } from "../gmail/gmail.client.js";
 import {
   archiveEmail,
+  labelAsConfirmation,
   labelAsRejection,
   ProtectedCompanyActionError,
   type GmailActionTarget,
@@ -160,15 +161,35 @@ function logOutcome(
   }
 }
 
-async function applyRejectionAction(email: EmailMessage, company: string | null, deps: InboxProcessorDeps): Promise<void> {
-  const target: GmailActionTarget = {
+function actionTarget(email: EmailMessage, company: string | null): GmailActionTarget {
+  return {
     gmailMessageId: email.gmailMessageId,
     from: email.from,
     subject: email.subject,
     body: email.body,
     company,
   };
-  await labelAsRejection(target, deps.protectedCompanies, deps.dryRun, deps.logger, deps.gmail);
+}
+
+async function applyConfirmationLabel(
+  email: EmailMessage,
+  company: string | null,
+  deps: InboxProcessorDeps,
+): Promise<void> {
+  await labelAsConfirmation(actionTarget(email, company), deps.dryRun, deps.logger, deps.gmail);
+}
+
+async function applyRejectionAction(
+  email: EmailMessage,
+  company: string | null,
+  archive: "immediate" | "blocked_protected",
+  deps: InboxProcessorDeps,
+): Promise<void> {
+  const target = actionTarget(email, company);
+  await labelAsRejection(target, deps.dryRun, deps.logger, deps.gmail);
+  if (archive === "blocked_protected") {
+    return;
+  }
   await archiveEmail(target, deps.protectedCompanies, deps.dryRun, deps.logger, deps.gmail);
 }
 
@@ -231,9 +252,31 @@ export async function processInbox(deps: InboxProcessorDeps): Promise<InboxProce
       continue;
     }
 
+    if (classified.outcome.proposedAction.kind === "include_in_summary") {
+      try {
+        await applyConfirmationLabel(email, result.classification.company, deps);
+      } catch (error: unknown) {
+        failed += 1;
+        deps.logger.error(
+          {
+            event: LogEvent.gmailApiError,
+            gmailMessageId: email.gmailMessageId,
+            errorMessage: errorText(error),
+          },
+          "Gmail API error",
+        );
+        continue;
+      }
+    }
+
     if (classified.outcome.proposedAction.kind === "label_and_archive_rejection") {
       try {
-        await applyRejectionAction(email, result.classification.company, deps);
+        await applyRejectionAction(
+          email,
+          result.classification.company,
+          classified.outcome.proposedAction.archive,
+          deps,
+        );
       } catch (error: unknown) {
         if (!(error instanceof ProtectedCompanyActionError)) {
           failed += 1;

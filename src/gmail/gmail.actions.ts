@@ -4,12 +4,8 @@ import { LogEvent } from "../logging/events.js";
 import { isProtectedCompany } from "../safety/protected-companies.js";
 
 export class ProtectedCompanyActionError extends Error {
-  constructor(action: "archive" | "label") {
-    super(
-      action === "archive"
-        ? "Blocked archive attempt for protected company"
-        : "Blocked rejection label attempt for protected company",
-    );
+  constructor() {
+    super("Blocked archive attempt for protected company");
     this.name = "ProtectedCompanyActionError";
   }
 }
@@ -22,10 +18,9 @@ export type GmailActionTarget = {
   company: string | null;
 };
 
-function assertNotProtected(
+function assertArchiveAllowed(
   email: GmailActionTarget,
   protectedCompanies: readonly string[],
-  action: "archive" | "label",
   logger?: Logger,
 ): void {
   if (
@@ -45,11 +40,9 @@ function assertNotProtected(
       event: LogEvent.actionBlockedProtectedCompany,
       gmailMessageId: email.gmailMessageId,
     },
-    action === "archive"
-      ? "Blocked archive attempt for protected company"
-      : "Blocked rejection label attempt for protected company",
+    "Blocked archive attempt for protected company",
   );
-  throw new ProtectedCompanyActionError(action);
+  throw new ProtectedCompanyActionError();
 }
 
 function logGmailAction(
@@ -77,7 +70,7 @@ export async function archiveEmail(
   logger: Logger | undefined,
   gmail: GmailMutationClient,
 ): Promise<void> {
-  assertNotProtected(email, protectedCompanies, "archive", logger);
+  assertArchiveAllowed(email, protectedCompanies, logger);
   if (dryRun) {
     logGmailAction(email, logger, LogEvent.emailArchived, true, "Email would be archived");
     return;
@@ -88,16 +81,34 @@ export async function archiveEmail(
 
 export async function labelAsRejection(
   email: GmailActionTarget,
-  protectedCompanies: readonly string[],
   dryRun: boolean,
   logger: Logger | undefined,
   gmail: GmailMutationClient,
 ): Promise<void> {
-  assertNotProtected(email, protectedCompanies, "label", logger);
   if (dryRun) {
     logGmailAction(email, logger, LogEvent.rejectionLabeled, true, "Email would be labeled as a rejection");
     return;
   }
   await gmail.labelMessageAsRejection(email.gmailMessageId);
   logGmailAction(email, logger, LogEvent.rejectionLabeled, false, "Email labeled as a rejection");
+}
+
+export async function labelAsConfirmation(
+  email: GmailActionTarget,
+  dryRun: boolean,
+  logger: Logger | undefined,
+  gmail: GmailMutationClient,
+): Promise<void> {
+  if (dryRun) {
+    logGmailAction(
+      email,
+      logger,
+      LogEvent.confirmationLabeled,
+      true,
+      "Email would be labeled as an application confirmation",
+    );
+    return;
+  }
+  await gmail.labelMessageAsConfirmation(email.gmailMessageId);
+  logGmailAction(email, logger, LogEvent.confirmationLabeled, false, "Email labeled as an application confirmation");
 }

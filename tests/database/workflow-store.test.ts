@@ -13,6 +13,9 @@ const gmail: GmailMutationClient = {
   labelMessageAsRejection: async function () {
     throw new Error("dry run must not label");
   },
+  labelMessageAsConfirmation: async function () {
+    throw new Error("dry run must not label");
+  },
   archiveMessage: async function () {
     throw new Error("dry run must not archive");
   },

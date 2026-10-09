@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { REJECTION_LABEL_NAME } from "../config/constants.js";
+import { APPLICATION_CONFIRMATION_LABEL_NAME, REJECTION_LABEL_NAME } from "../config/constants.js";
 import type { InboxMessageRef } from "../types/email.types.js";
 import type { GoogleAuthClient } from "./gmail.auth.js";
 import type { gmail_v1 } from "googleapis";
@@ -46,16 +46,17 @@ export function createGmailReadClient(auth: GoogleAuthClient): GmailReadClient {
 
 export type GmailMutationClient = {
   labelMessageAsRejection: (gmailMessageId: string) => Promise<void>;
+  labelMessageAsConfirmation: (gmailMessageId: string) => Promise<void>;
   archiveMessage: (gmailMessageId: string) => Promise<void>;
 };
 
 export function createGmailMutationClient(auth: GoogleAuthClient): GmailMutationClient {
   const gmail = google.gmail({ version: "v1", auth });
 
-  async function rejectionLabelId(): Promise<string> {
+  async function labelId(name: string): Promise<string> {
     const listed = await gmail.users.labels.list({ userId: "me" });
     const existing = (listed.data.labels ?? []).find(function (label) {
-      return label.name === REJECTION_LABEL_NAME && typeof label.id === "string";
+      return label.name === name && typeof label.id === "string";
     });
     if (existing?.id) {
       return existing.id;
@@ -64,26 +65,34 @@ export function createGmailMutationClient(auth: GoogleAuthClient): GmailMutation
     const created = await gmail.users.labels.create({
       userId: "me",
       requestBody: {
-        name: REJECTION_LABEL_NAME,
+        name,
         labelListVisibility: "labelShow",
         messageListVisibility: "show",
       },
     });
     if (!created.data.id) {
-      throw new Error("Gmail did not return a rejection label id");
+      throw new Error(`Gmail did not return an id for label ${name}`);
     }
     return created.data.id;
   }
 
-  async function labelMessageAsRejection(gmailMessageId: string): Promise<void> {
-    const labelId = await rejectionLabelId();
+  async function addLabel(gmailMessageId: string, name: string): Promise<void> {
+    const id = await labelId(name);
     await gmail.users.messages.modify({
       userId: "me",
       id: gmailMessageId,
       requestBody: {
-        addLabelIds: [labelId],
+        addLabelIds: [id],
       },
     });
+  }
+
+  async function labelMessageAsRejection(gmailMessageId: string): Promise<void> {
+    await addLabel(gmailMessageId, REJECTION_LABEL_NAME);
+  }
+
+  async function labelMessageAsConfirmation(gmailMessageId: string): Promise<void> {
+    await addLabel(gmailMessageId, APPLICATION_CONFIRMATION_LABEL_NAME);
   }
 
   async function archiveMessage(gmailMessageId: string): Promise<void> {
@@ -96,5 +105,5 @@ export function createGmailMutationClient(auth: GoogleAuthClient): GmailMutation
     });
   }
 
-  return { labelMessageAsRejection, archiveMessage };
+  return { labelMessageAsRejection, labelMessageAsConfirmation, archiveMessage };
 }

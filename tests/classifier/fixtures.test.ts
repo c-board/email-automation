@@ -19,10 +19,10 @@ function permittedAction(classification: Classification, protectedCompany: boole
     };
   }
   if (classification === "REJECTION") {
-    if (protectedCompany) {
-      return { kind: "none", reason: "Protected company" };
-    }
-    return { kind: "label_and_archive_rejection" };
+    return {
+      kind: "label_and_archive_rejection",
+      archive: protectedCompany ? "blocked_protected" : "immediate",
+    };
   }
   return { kind: "none", reason: "No Gmail action for this classification" };
 }
@@ -50,7 +50,7 @@ describe("email fixtures", function () {
     ]);
   });
 
-  it("permits an action only for confident confirmations and unprotected rejections", function () {
+  it("permits a label for confident confirmations and rejections, and blocks protected archive", function () {
     for (const fixture of emailFixtures) {
       const protectedCompany = isProtectedCompany({
         protectedCompanies,

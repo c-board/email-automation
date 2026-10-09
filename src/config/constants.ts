@@ -14,6 +14,7 @@ export const DEFAULT_FETCH_LIMIT = 20;
 export const DEFAULT_MAX_EMAIL_BODY_CHARS = 30_000;
 export const DEFAULT_PROTECTED_COMPANIES = ["Grainger"] as const;
 export const REJECTION_LABEL_NAME = "Job Rejections";
+export const APPLICATION_CONFIRMATION_LABEL_NAME = "Application Confirmations";
 
 export function gmailOauthRedirectUri(): string {
   return `http://${GMAIL_OAUTH_HOST}:${GMAIL_OAUTH_PORT}${GMAIL_OAUTH_REDIRECT_PATH}`;

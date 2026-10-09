@@ -93,4 +93,29 @@ describe("gmail mutation client", function () {
     expect(trash).not.toHaveBeenCalled();
     expect(deleteMessage).not.toHaveBeenCalled();
   });
+
+  it("creates the application confirmation label when it does not exist", async function () {
+    listLabels.mockResolvedValue({ data: { labels: [] } });
+    createLabel.mockResolvedValue({ data: { id: "Label_2" } });
+    modify.mockResolvedValue({ data: {} });
+    const gmail = createGmailMutationClient(auth);
+
+    await gmail.labelMessageAsConfirmation("m-3");
+
+    expect(createLabel).toHaveBeenCalledWith({
+      userId: "me",
+      requestBody: {
+        name: "Application Confirmations",
+        labelListVisibility: "labelShow",
+        messageListVisibility: "show",
+      },
+    });
+    expect(modify).toHaveBeenCalledWith({
+      userId: "me",
+      id: "m-3",
+      requestBody: { addLabelIds: ["Label_2"] },
+    });
+    expect(trash).not.toHaveBeenCalled();
+    expect(deleteMessage).not.toHaveBeenCalled();
+  });
 });

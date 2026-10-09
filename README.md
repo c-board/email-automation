@@ -2,7 +2,7 @@
 
 Service that classifies recent Gmail messages with OpenAI, stores application confirmations in SQLite, and emails a daily summary. `pnpm start` stays running and runs those jobs on a schedule.
 
-With `DRY_RUN=true`, label and archive actions are only logged. Set `DRY_RUN=false` to label an unprotected rejection `Job Rejections` and archive it, and to archive a confirmation after its summary is sent. Messages are never deleted. Grainger stays blocked. The OAuth scope is `gmail.modify`. An existing read-only refresh token cannot make these changes.
+With `DRY_RUN=true`, label and archive actions are only logged. Set `DRY_RUN=false` to label a confirmation `Application Confirmations`, label a rejection `Job Rejections`, archive an unprotected rejection, and archive an unprotected confirmation after its summary is sent. Messages are never deleted. Grainger can be labeled and is never archived. The OAuth scope is `gmail.modify`. An existing read-only refresh token cannot make these changes.
 
 Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. `pnpm run send-summary` prints one summary of unsummarized confirmations. While `DRY_RUN=true`, that command only prints and leaves the rows unsummarized. A real send needs Fastmail settings and `DRY_RUN=false`, and marks those rows summarized only after Fastmail accepts the message.
 
@@ -51,13 +51,13 @@ Start the scheduler and leave it running. It does not run a job at startup. The 
 pnpm start
 ```
 
-Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. With `DRY_RUN=true`, an unprotected rejection is logged as a future `Job Rejections` label and archive. With `DRY_RUN=false`, that label is applied and the message is archived. This command still runs once and exits:
+Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. A confident confirmation is labeled `Application Confirmations`. A confident rejection is labeled `Job Rejections`. With `DRY_RUN=true` those labels are only logged. With `DRY_RUN=false` they are applied, and an unprotected rejection is archived. This command still runs once and exits:
 
 ```bash
 pnpm run process-inbox
 ```
 
-Print the daily summary of confirmations that have not been summarized yet. This re-reads those Gmail messages. Grainger stays blocked. With `DRY_RUN=true` it logs which confirmations would be archived and does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail and archive the unprotected confirmations after the send succeeds. OpenAI is not required for this command:
+Print the daily summary of confirmations that have not been summarized yet. This re-reads those Gmail messages. Grainger is never archived. With `DRY_RUN=true` it logs which confirmations would be archived and does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail and archive the unprotected confirmations after the send succeeds. OpenAI is not required for this command:
 
 ```bash
 pnpm run send-summary
@@ -81,7 +81,7 @@ pnpm run eval-fixtures
 - Confidence from `REVIEW_CONFIDENCE` (default `0.80`) up to the automatic threshold is logged, with no Gmail change.
 - Confidence below the review threshold is treated as `UNKNOWN`.
 - An invalid model response produces no action.
-- Grainger is protected by default (`PROTECTED_COMPANIES`). A protected company is never given an archive or rejection-label proposal.
+- Grainger is protected by default (`PROTECTED_COMPANIES`). A protected company can be labeled and is never archived.
 - Logs omit email bodies and redact tokens, API keys, and passwords.
 
 ## Railway

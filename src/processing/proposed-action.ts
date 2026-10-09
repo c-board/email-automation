@@ -1,4 +1,4 @@
-import { REJECTION_LABEL_NAME } from "../config/constants.js";
+import { APPLICATION_CONFIRMATION_LABEL_NAME, REJECTION_LABEL_NAME } from "../config/constants.js";
 import type { Classification } from "../types/classification.types.js";
 import { applyConfidenceGate, type ConfidenceThresholds } from "./confidence-gate.js";
 
@@ -8,7 +8,7 @@ export type ProposedAction =
       kind: "include_in_summary";
       archive: "deferred_until_summary" | "blocked_protected";
     }
-  | { kind: "label_and_archive_rejection" };
+  | { kind: "label_and_archive_rejection"; archive: "immediate" | "blocked_protected" };
 
 export type ActionDecision = {
   effectiveClassification: Classification;
@@ -31,10 +31,12 @@ export function describeProposedAction(action: ProposedAction): string {
       return action.reason;
     case "include_in_summary":
       return action.archive === "blocked_protected"
-        ? "Include in application summary. Archive: BLOCKED — protected company"
-        : "Include in application summary. Archive: deferred until summary is sent";
+        ? `Label ${APPLICATION_CONFIRMATION_LABEL_NAME}. Include in application summary. Archive: BLOCKED — protected company`
+        : `Label ${APPLICATION_CONFIRMATION_LABEL_NAME}. Include in application summary. Archive: deferred until summary is sent`;
     case "label_and_archive_rejection":
-      return `Label ${REJECTION_LABEL_NAME} and archive`;
+      return action.archive === "blocked_protected"
+        ? `Label ${REJECTION_LABEL_NAME}. Archive: BLOCKED — protected company`
+        : `Label ${REJECTION_LABEL_NAME} and archive`;
   }
 }
 
@@ -81,19 +83,14 @@ export function proposeAction(input: ProposeActionInput): ActionDecision {
   }
 
   if (input.classification === "REJECTION") {
-    if (input.protectedCompany) {
-      return {
-        effectiveClassification: input.classification,
-        action: { kind: "none", reason: "Protected company" },
-        confidenceBlocked: false,
-        protectedCompanyBlocked: true,
-      };
-    }
     return {
       effectiveClassification: input.classification,
-      action: { kind: "label_and_archive_rejection" },
+      action: {
+        kind: "label_and_archive_rejection",
+        archive: input.protectedCompany ? "blocked_protected" : "immediate",
+      },
       confidenceBlocked: false,
-      protectedCompanyBlocked: false,
+      protectedCompanyBlocked: input.protectedCompany,
     };
   }
 

@@ -36,7 +36,7 @@ describe("proposeAction", function () {
     expect(decision.protectedCompanyBlocked).toBe(true);
   });
 
-  it("does nothing for a protected rejection", function () {
+  it("labels a protected rejection and blocks archive", function () {
     const decision = proposeAction({
       classification: "REJECTION",
       confidence: 0.99,
@@ -44,11 +44,14 @@ describe("proposeAction", function () {
       protectedCompany: true,
       classificationValid: true,
     });
-    expect(decision.action).toEqual({ kind: "none", reason: "Protected company" });
+    expect(decision.action).toEqual({
+      kind: "label_and_archive_rejection",
+      archive: "blocked_protected",
+    });
     expect(decision.protectedCompanyBlocked).toBe(true);
   });
 
-  it("proposes a rejection label only for an unprotected confident rejection", function () {
+  it("proposes a rejection label and archive for an unprotected confident rejection", function () {
     const decision = proposeAction({
       classification: "REJECTION",
       confidence: 0.96,
@@ -56,7 +59,10 @@ describe("proposeAction", function () {
       protectedCompany: false,
       classificationValid: true,
     });
-    expect(decision.action).toEqual({ kind: "label_and_archive_rejection" });
+    expect(decision.action).toEqual({
+      kind: "label_and_archive_rejection",
+      archive: "immediate",
+    });
   });
 
   it("takes no Gmail action for other categories", function () {

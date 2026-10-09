@@ -16,5 +16,6 @@ export const LogEvent = {
   summaryFailed: "summary.failed",
   emailArchived: "email.archived",
   rejectionLabeled: "rejection.labeled",
+  confirmationLabeled: "confirmation.labeled",
   jobFailed: "job.failed",
 } as const;
