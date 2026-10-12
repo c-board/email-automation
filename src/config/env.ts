@@ -9,7 +9,6 @@ import {
   DEFAULT_INBOX_PROCESSING_CRON,
   DEFAULT_MAX_EMAIL_BODY_CHARS,
   DEFAULT_PROTECTED_COMPANIES,
-  DEFAULT_SUMMARY_CRON,
 } from "./constants.js";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace"] as const;
@@ -62,7 +61,6 @@ const schedulerEnvSchema = envSchema.extend({
   FASTMAIL_USERNAME: z.string().min(1).optional(),
   FASTMAIL_PASSWORD: z.string().min(1).optional(),
   INBOX_PROCESSING_CRON: z.string().min(1).default(DEFAULT_INBOX_PROCESSING_CRON),
-  SUMMARY_CRON: z.string().min(1).default(DEFAULT_SUMMARY_CRON),
 });
 
 export type Env = {
@@ -112,7 +110,6 @@ export type SummaryEnv = SummaryEnvBase &
 export type SchedulerEnv = Env &
   SummaryEnv & {
     inboxProcessingCron: string;
-    summaryCron: string;
   };
 
 type EnvSource = Record<string, string | undefined>;
@@ -289,7 +286,6 @@ export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
     "INBOX_PROCESSING_CRON",
     parsed.data.INBOX_PROCESSING_CRON,
   );
-  const summaryCron = requireCron("SUMMARY_CRON", parsed.data.SUMMARY_CRON);
   const dryRun = parsed.data.DRY_RUN === "true";
   const fastmailUsername = parsed.data.FASTMAIL_USERNAME ?? null;
   const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
@@ -312,7 +308,6 @@ export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
     fastmailSmtpHost: parsed.data.FASTMAIL_SMTP_HOST,
     fastmailSmtpPort: parsed.data.FASTMAIL_SMTP_PORT,
     inboxProcessingCron,
-    summaryCron,
   };
 
   if (dryRun) {

@@ -88,20 +88,19 @@ describe("parseSummaryEnv", function () {
 });
 
 describe("parseSchedulerEnv", function () {
-  it("defaults both schedules and requires a summary recipient", function () {
+  it("defaults the inbox schedule and requires a summary recipient", function () {
     const env = parseSchedulerEnv({
       ...required,
       SUMMARY_RECIPIENT: "alex@example.com",
     });
     expect(env.dryRun).toBe(true);
     expect(env.inboxProcessingCron).toBe("*/30 * * * *");
-    expect(env.summaryCron).toBe("0 18 * * *");
     expect(env.timezone).toBe("America/Chicago");
     expect(env.summaryRecipient).toBe("alex@example.com");
     expect(env.fastmailUsername).toBeNull();
   });
 
-  it("rejects an invalid cron expression", function () {
+  it("rejects an invalid inbox cron expression", function () {
     expect(function () {
       parseSchedulerEnv({
         ...required,
@@ -109,14 +108,6 @@ describe("parseSchedulerEnv", function () {
         INBOX_PROCESSING_CRON: "not a cron",
       });
     }).toThrow(/INBOX_PROCESSING_CRON/);
-
-    expect(function () {
-      parseSchedulerEnv({
-        ...required,
-        SUMMARY_RECIPIENT: "alex@example.com",
-        SUMMARY_CRON: "not a cron",
-      });
-    }).toThrow(/SUMMARY_CRON/);
   });
 
   it("requires a recipient and Fastmail credentials when dry run is off", function () {

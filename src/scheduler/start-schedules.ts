@@ -7,7 +7,6 @@ import { createJobLock } from "./job-lock.js";
 
 export type ScheduledJobs = {
   runInbox: () => Promise<void>;
-  runSummary: () => Promise<void>;
 };
 
 export type ScheduleHandle = {
@@ -15,13 +14,13 @@ export type ScheduleHandle = {
 };
 
 export function startSchedules(
-  env: Pick<SchedulerEnv, "inboxProcessingCron" | "summaryCron" | "timezone">,
+  env: Pick<SchedulerEnv, "inboxProcessingCron" | "timezone">,
   logger: Logger,
   jobs: ScheduledJobs,
 ): ScheduleHandle {
   const lock = createJobLock();
 
-  async function runJob(name: "inbox" | "summary", job: () => Promise<void>): Promise<void> {
+  async function runJob(job: () => Promise<void>): Promise<void> {
     await lock.runExclusive(async function () {
       try {
         await job();
@@ -29,7 +28,7 @@ export function startSchedules(
         logger.error(
           {
             event: LogEvent.jobFailed,
-            job: name,
+            job: "inbox",
             errorMessage: errorText(error),
           },
           "Scheduled job failed",
@@ -41,21 +40,10 @@ export function startSchedules(
   const inbox = schedule(
     env.inboxProcessingCron,
     function () {
-      return runJob("inbox", jobs.runInbox);
+      return runJob(jobs.runInbox);
     },
     {
       name: "inbox",
-      timezone: env.timezone,
-      noOverlap: true,
-    },
-  );
-  const summary = schedule(
-    env.summaryCron,
-    function () {
-      return runJob("summary", jobs.runSummary);
-    },
-    {
-      name: "summary",
       timezone: env.timezone,
       noOverlap: true,
     },
@@ -64,7 +52,6 @@ export function startSchedules(
   return {
     stop: async function () {
       await stopTask(inbox);
-      await stopTask(summary);
     },
   };
 }

@@ -45,19 +45,19 @@ Open the printed URL, approve access, and paste `GOOGLE_REFRESH_TOKEN` into `.en
 
 ## Commands
 
-Start the scheduler and leave it running. It does not run a job at startup. The next inbox check and the next daily summary follow `INBOX_PROCESSING_CRON` and `SUMMARY_CRON` in `TIMEZONE` (default `America/Chicago`). Those default to every 30 minutes (`*/30 * * * *`) and 6:00 p.m. (`0 18 * * *`). `SUMMARY_RECIPIENT` is required. Fastmail username and password are required only when `DRY_RUN=false`. If one job is still running, the other waits. A job error is logged and the process stays up.
+Start the scheduler and leave it running. It does not run a job at startup. The next inbox check follows `INBOX_PROCESSING_CRON` in `TIMEZONE` (default `America/Chicago`), which defaults to every 30 minutes (`*/30 * * * *`). That run classifies new mail, then sends one summary of confirmations that are still waiting and archives the unprotected ones. `SUMMARY_RECIPIENT` is required. Fastmail username and password are required only when `DRY_RUN=false`. A job error is logged and the process stays up.
 
 ```bash
 pnpm start
 ```
 
-Classify new inbox messages (default 20) and print subject, classification, confidence, company, position, reason, and the action that would be taken later. Messages already stored in SQLite are skipped. A confident confirmation is labeled `Application Confirmations`. A confident rejection is labeled `Job Rejections`. With `DRY_RUN=true` those labels are only logged. With `DRY_RUN=false` they are applied, and an unprotected rejection is archived. This command still runs once and exits:
+Classify new inbox messages (default 20), then send the summary and archive unprotected confirmations from that same run. Messages already stored in SQLite are skipped. A confident confirmation is labeled `Application Confirmations`. A confident rejection is labeled `Job Rejections` and, unless it is Grainger, archived. With `DRY_RUN=true` labels and the summary are only logged. With `DRY_RUN=false` they are applied. This command still runs once and exits:
 
 ```bash
 pnpm run process-inbox
 ```
 
-Print the daily summary of confirmations that have not been summarized yet. This re-reads those Gmail messages. Grainger is never archived. With `DRY_RUN=true` it logs which confirmations would be archived and does not send mail. Set `SUMMARY_RECIPIENT`, `FASTMAIL_USERNAME`, `FASTMAIL_PASSWORD`, and `DRY_RUN=false` to send through Fastmail and archive the unprotected confirmations after the send succeeds. OpenAI is not required for this command:
+Send the summary without classifying new mail. This re-reads unsummarized confirmations. Grainger is never archived. With `DRY_RUN=true` it logs which confirmations would be archived and does not send mail. The scheduled inbox run already does this after classifying. Use this command when you want the send by itself:
 
 ```bash
 pnpm run send-summary
@@ -88,7 +88,7 @@ pnpm run eval-fixtures
 
 Keep one replica. Two copies would write the same SQLite file and could send two summaries. Mount a volume at `/data` so the database survives a deploy, and set `DATABASE_URL=file:/data/email-automation.sqlite`.
 
-Copy the variables from `.env` into the Railway service. Do not put secrets in the repo. Include the Google client id, secret, and refresh token, `OPENAI_API_KEY`, `SUMMARY_RECIPIENT`, `TIMEZONE`, `DRY_RUN`, and the two cron expressions. Fastmail host, port, username, and app password are required in those variables when `DRY_RUN=false`.
+Copy the variables from `.env` into the Railway service. Do not put secrets in the repo. Include the Google client id, secret, and refresh token, `OPENAI_API_KEY`, `SUMMARY_RECIPIENT`, `TIMEZONE`, `DRY_RUN`, and `INBOX_PROCESSING_CRON`. Fastmail host, port, username, and app password are required in those variables when `DRY_RUN=false`.
 
 Leave `DRY_RUN=true` until the Railway variables contain a Gmail refresh token from `pnpm run gmail-auth` (scope `gmail.modify`) and a Fastmail app password. Then:
 

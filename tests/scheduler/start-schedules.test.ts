@@ -17,21 +17,17 @@ function findTask(name: string): ScheduledTask {
 }
 
 describe("startSchedules", function () {
-  it("does not run jobs at startup", async function () {
+  it("registers only the inbox cron and does not run it at startup", async function () {
     const calls: string[] = [];
     const schedules = startSchedules(
       {
         timezone: "America/Chicago",
         inboxProcessingCron: "0 0 1 1 *",
-        summaryCron: "0 0 2 1 *",
       },
       logger,
       {
         runInbox: async function () {
           calls.push("inbox");
-        },
-        runSummary: async function () {
-          calls.push("summary");
         },
       },
     );
@@ -40,48 +36,12 @@ describe("startSchedules", function () {
       setTimeout(resolve, 50);
     });
     expect(calls).toEqual([]);
-    await schedules.stop();
-  });
-
-  it("waits for the other job instead of overlapping", async function () {
-    const order: string[] = [];
-    let releaseInbox: () => void = function () {};
-    const schedules = startSchedules(
-      {
-        timezone: "America/Chicago",
-        inboxProcessingCron: "0 0 1 1 *",
-        summaryCron: "0 0 2 1 *",
-      },
-      logger,
-      {
-        runInbox: async function () {
-          order.push("inbox-start");
-          await new Promise<void>(function (resolve) {
-            releaseInbox = resolve;
-          });
-          order.push("inbox-end");
-        },
-        runSummary: async function () {
-          order.push("summary");
-        },
-      },
-    );
-
-    const inboxRun = findTask("inbox").execute();
-    await expect.poll(function () {
-      return order;
-    }).toEqual(["inbox-start"]);
-
-    const summaryRun = findTask("summary").execute();
-    await new Promise(function (resolve) {
-      setTimeout(resolve, 20);
+    const active = [...getTasks().values()].filter(function (task) {
+      return task.getStatus() !== "destroyed";
     });
-    expect(order).toEqual(["inbox-start"]);
-
-    releaseInbox();
-    await inboxRun;
-    await summaryRun;
-    expect(order).toEqual(["inbox-start", "inbox-end", "summary"]);
+    expect(active.map(function (task) {
+      return task.name;
+    })).toEqual(["inbox"]);
     await schedules.stop();
   });
 
@@ -91,7 +51,6 @@ describe("startSchedules", function () {
       {
         timezone: "America/Chicago",
         inboxProcessingCron: "0 0 1 1 *",
-        summaryCron: "0 0 2 1 *",
       },
       {
         ...logger,
@@ -103,15 +62,11 @@ describe("startSchedules", function () {
         runInbox: async function () {
           throw new Error("inbox failed");
         },
-        runSummary: async function () {
-          events.push("summary");
-        },
       },
     );
 
     await findTask("inbox").execute();
-    await findTask("summary").execute();
-    expect(events).toEqual(["error", "summary"]);
+    expect(events).toEqual(["error"]);
     expect(findTask("inbox").getStatus()).not.toBe("destroyed");
     await schedules.stop();
   });
