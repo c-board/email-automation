@@ -7,7 +7,7 @@ import { createSqliteWorkflowStore, type SummaryStore } from "../../src/database
 import { LogEvent } from "../../src/logging/events.js";
 import type { Logger } from "../../src/logging/logger.js";
 import { SUMMARY_FIELD_NOT_SPECIFIED, formatSummary } from "../../src/summary/format-summary.js";
-import type { SummaryMail, SummaryMailer } from "../../src/summary/fastmail.js";
+import type { SummaryMail, SummaryMailer } from "../../src/summary/resend.js";
 import type { GmailMutationClient } from "../../src/gmail/gmail.client.js";
 import { sendDailySummary, type ConfirmationSource } from "../../src/summary/send-daily-summary.js";
 

@@ -15,7 +15,7 @@ const REDACT_PATHS = [
   "OPENAI_API_KEY",
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_REFRESH_TOKEN",
-  "FASTMAIL_PASSWORD",
+  "RESEND_API_KEY",
   "*.refreshToken",
   "*.refresh_token",
   "*.access_token",

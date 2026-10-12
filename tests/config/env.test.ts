@@ -50,23 +50,22 @@ const summaryRequired = {
 };
 
 describe("parseSummaryEnv", function () {
-  it("requires a recipient and defaults the Fastmail host", function () {
+  it("requires a recipient and does not require Resend during dry run", function () {
     const env = parseSummaryEnv(summaryRequired);
     expect(env.dryRun).toBe(true);
     expect(env.summaryRecipient).toBe("alex@example.com");
-    expect(env.fastmailSmtpHost).toBe("smtp.fastmail.com");
-    expect(env.fastmailSmtpPort).toBe(465);
     expect(env.timezone).toBe("America/Chicago");
-    expect(env.fastmailUsername).toBeNull();
+    expect(env.resendApiKey).toBeNull();
+    expect(env.resendFrom).toBeNull();
   });
 
-  it("requires Fastmail credentials when dry run is off", function () {
+  it("requires Resend settings when dry run is off", function () {
     expect(function () {
       parseSummaryEnv({
         ...summaryRequired,
         DRY_RUN: "false",
       });
-    }).toThrow(/FASTMAIL_USERNAME/);
+    }).toThrow(/RESEND_API_KEY/);
   });
 
   it("requires Google credentials and does not require OpenAI", function () {
@@ -77,12 +76,13 @@ describe("parseSummaryEnv", function () {
     const env = parseSummaryEnv({
       ...summaryRequired,
       DRY_RUN: "false",
-      FASTMAIL_USERNAME: "alex@fastmail.com",
-      FASTMAIL_PASSWORD: "app-password",
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "jobs@example.com",
     });
     expect(env.dryRun).toBe(false);
     if (!env.dryRun) {
-      expect(env.fastmailUsername).toBe("alex@fastmail.com");
+      expect(env.resendApiKey).toBe("re_test");
+      expect(env.resendFrom).toBe("jobs@example.com");
     }
   });
 });
@@ -97,7 +97,8 @@ describe("parseSchedulerEnv", function () {
     expect(env.inboxProcessingCron).toBe("*/30 * * * *");
     expect(env.timezone).toBe("America/Chicago");
     expect(env.summaryRecipient).toBe("alex@example.com");
-    expect(env.fastmailUsername).toBeNull();
+    expect(env.resendApiKey).toBeNull();
+    expect(env.resendFrom).toBeNull();
   });
 
   it("rejects an invalid inbox cron expression", function () {
@@ -110,7 +111,7 @@ describe("parseSchedulerEnv", function () {
     }).toThrow(/INBOX_PROCESSING_CRON/);
   });
 
-  it("requires a recipient and Fastmail credentials when dry run is off", function () {
+  it("requires a recipient and Resend settings when dry run is off", function () {
     expect(function () {
       parseSchedulerEnv(required);
     }).toThrow(/SUMMARY_RECIPIENT/);
@@ -121,7 +122,7 @@ describe("parseSchedulerEnv", function () {
         SUMMARY_RECIPIENT: "alex@example.com",
         DRY_RUN: "false",
       });
-    }).toThrow(/FASTMAIL_USERNAME/);
+    }).toThrow(/RESEND_API_KEY/);
   });
 });
 

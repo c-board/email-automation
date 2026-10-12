@@ -5,7 +5,7 @@ import { createOAuthClient } from "../gmail/gmail.auth.js";
 import { createGmailMutationClient, createGmailReadClient } from "../gmail/gmail.client.js";
 import { parseGmailMessage } from "../gmail/gmail.reader.js";
 import type { Logger } from "../logging/logger.js";
-import { createFastmailMailer } from "../summary/fastmail.js";
+import { createResendMailer } from "../summary/resend.js";
 import {
   sendDailySummary,
   type ConfirmationSource,
@@ -21,21 +21,14 @@ export async function runSummaryJob(env: SummaryEnv, logger: Logger): Promise<Se
     refreshToken: env.googleRefreshToken,
   });
   const gmail = createGmailReadClient(auth);
-  const mailer = env.dryRun
-    ? null
-    : createFastmailMailer({
-        host: env.fastmailSmtpHost,
-        port: env.fastmailSmtpPort,
-        username: env.fastmailUsername,
-        password: env.fastmailPassword,
-      });
+  const mailer = env.dryRun ? null : createResendMailer({ apiKey: env.resendApiKey });
 
   return sendDailySummary({
     store,
     mailer,
     dryRun: env.dryRun,
     recipient: env.summaryRecipient,
-    fromAddress: env.fastmailUsername,
+    fromAddress: env.resendFrom,
     timeZone: env.timezone,
     now: new Date(),
     logger,

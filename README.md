@@ -4,7 +4,7 @@ Service that classifies recent Gmail messages with OpenAI, stores application co
 
 With `DRY_RUN=true`, label and archive actions are only logged. Set `DRY_RUN=false` to label a confirmation `Application Confirmations`, label a rejection `Job Rejections`, archive an unprotected rejection, and archive an unprotected confirmation after its summary is sent. Messages are never deleted. Grainger can be labeled and is never archived. The OAuth scope is `gmail.modify`. An existing read-only refresh token cannot make these changes.
 
-Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. `pnpm run send-summary` prints one summary of unsummarized confirmations. While `DRY_RUN=true`, that command only prints and leaves the rows unsummarized. A real send needs Fastmail settings and `DRY_RUN=false`, and marks those rows summarized only after Fastmail accepts the message.
+Processed Gmail ids and application confirmations are stored in SQLite. A later `pnpm run process-inbox` skips those messages before calling the model. The database file survives a process restart. `pnpm run send-summary` prints one summary of unsummarized confirmations. While `DRY_RUN=true`, that command only prints and leaves the rows unsummarized. A real send needs Resend settings and `DRY_RUN=false`, and marks those rows summarized only after Resend accepts the message.
 
 ## Requirements
 
@@ -45,7 +45,7 @@ Open the printed URL, approve access, and paste `GOOGLE_REFRESH_TOKEN` into `.en
 
 ## Commands
 
-Start the scheduler and leave it running. It does not run a job at startup. The next inbox check follows `INBOX_PROCESSING_CRON` in `TIMEZONE` (default `America/Chicago`), which defaults to every 30 minutes (`*/30 * * * *`). That run classifies new mail, then sends one summary of confirmations that are still waiting and archives the unprotected ones. `SUMMARY_RECIPIENT` is required. Fastmail username and password are required only when `DRY_RUN=false`. A job error is logged and the process stays up.
+Start the scheduler and leave it running. It does not run a job at startup. The next inbox check follows `INBOX_PROCESSING_CRON` in `TIMEZONE` (default `America/Chicago`), which defaults to every 30 minutes (`*/30 * * * *`). That run classifies new mail, then sends one summary of confirmations that are still waiting and archives the unprotected ones. `SUMMARY_RECIPIENT` is required. `RESEND_API_KEY` and `RESEND_FROM` are required only when `DRY_RUN=false`. A job error is logged and the process stays up.
 
 ```bash
 pnpm start
@@ -88,9 +88,9 @@ pnpm run eval-fixtures
 
 Keep one replica. Two copies would write the same SQLite file and could send two summaries. Mount a volume at `/data` so the database survives a deploy, and set `DATABASE_URL=file:/data/email-automation.sqlite`.
 
-Copy the variables from `.env` into the Railway service. Do not put secrets in the repo. Include the Google client id, secret, and refresh token, `OPENAI_API_KEY`, `SUMMARY_RECIPIENT`, `TIMEZONE`, `DRY_RUN`, and `INBOX_PROCESSING_CRON`. Fastmail host, port, username, and app password are required in those variables when `DRY_RUN=false`.
+Copy the variables from `.env` into the Railway service. Do not put secrets in the repo. Include the Google client id, secret, and refresh token, `OPENAI_API_KEY`, `SUMMARY_RECIPIENT`, `TIMEZONE`, `DRY_RUN`, and `INBOX_PROCESSING_CRON`. `RESEND_API_KEY` and `RESEND_FROM` are required in those variables when `DRY_RUN=false`. `RESEND_FROM` must be a sender verified in Resend. The summary is delivered to `SUMMARY_RECIPIENT`.
 
-Leave `DRY_RUN=true` until the Railway variables contain a Gmail refresh token from `pnpm run gmail-auth` (scope `gmail.modify`) and a Fastmail app password. Then:
+Leave `DRY_RUN=true` until the Railway variables contain a Gmail refresh token from `pnpm run gmail-auth` (scope `gmail.modify`) and the Resend key and from address. Then:
 
 ```bash
 railway login

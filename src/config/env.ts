@@ -3,8 +3,6 @@ import { z } from "zod";
 import { validate as validateCron } from "node-cron";
 import {
   DEFAULT_DATABASE_URL,
-  DEFAULT_FASTMAIL_SMTP_HOST,
-  DEFAULT_FASTMAIL_SMTP_PORT,
   DEFAULT_FETCH_LIMIT,
   DEFAULT_INBOX_PROCESSING_CRON,
   DEFAULT_MAX_EMAIL_BODY_CHARS,
@@ -48,18 +46,14 @@ const summaryEnvSchema = z.object({
   MAX_EMAIL_BODY_CHARS: z.coerce.number().int().positive().default(DEFAULT_MAX_EMAIL_BODY_CHARS),
   PROTECTED_COMPANIES: z.string().optional(),
   SUMMARY_RECIPIENT: z.string().min(1),
-  FASTMAIL_SMTP_HOST: z.string().min(1).default(DEFAULT_FASTMAIL_SMTP_HOST),
-  FASTMAIL_SMTP_PORT: z.coerce.number().int().positive().default(DEFAULT_FASTMAIL_SMTP_PORT),
-  FASTMAIL_USERNAME: z.string().min(1).optional(),
-  FASTMAIL_PASSWORD: z.string().min(1).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_FROM: z.string().min(1).optional(),
 });
 
 const schedulerEnvSchema = envSchema.extend({
   SUMMARY_RECIPIENT: z.string().min(1),
-  FASTMAIL_SMTP_HOST: z.string().min(1).default(DEFAULT_FASTMAIL_SMTP_HOST),
-  FASTMAIL_SMTP_PORT: z.coerce.number().int().positive().default(DEFAULT_FASTMAIL_SMTP_PORT),
-  FASTMAIL_USERNAME: z.string().min(1).optional(),
-  FASTMAIL_PASSWORD: z.string().min(1).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_FROM: z.string().min(1).optional(),
   INBOX_PROCESSING_CRON: z.string().min(1).default(DEFAULT_INBOX_PROCESSING_CRON),
 });
 
@@ -97,14 +91,12 @@ type SummaryEnvBase = {
   logLevel: (typeof logLevels)[number];
   databaseUrl: string;
   summaryRecipient: string;
-  fastmailSmtpHost: string;
-  fastmailSmtpPort: number;
 };
 
 export type SummaryEnv = SummaryEnvBase &
   (
-    | { dryRun: true; fastmailUsername: string | null; fastmailPassword: string | null }
-    | { dryRun: false; fastmailUsername: string; fastmailPassword: string }
+    | { dryRun: true; resendApiKey: string | null; resendFrom: string | null }
+    | { dryRun: false; resendApiKey: string; resendFrom: string }
   );
 
 export type SchedulerEnv = Env &
@@ -212,8 +204,8 @@ export function parseSummaryEnv(source: EnvSource): SummaryEnv {
   }
 
   const dryRun = parsed.data.DRY_RUN === "true";
-  const fastmailUsername = parsed.data.FASTMAIL_USERNAME ?? null;
-  const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
+  const resendApiKey = parsed.data.RESEND_API_KEY ?? null;
+  const resendFrom = parsed.data.RESEND_FROM ?? null;
   const base = {
     nodeEnv: parsed.data.NODE_ENV,
     googleClientId: parsed.data.GOOGLE_CLIENT_ID,
@@ -225,28 +217,26 @@ export function parseSummaryEnv(source: EnvSource): SummaryEnv {
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,
     summaryRecipient: parsed.data.SUMMARY_RECIPIENT,
-    fastmailSmtpHost: parsed.data.FASTMAIL_SMTP_HOST,
-    fastmailSmtpPort: parsed.data.FASTMAIL_SMTP_PORT,
   };
 
   if (dryRun) {
     return {
       ...base,
       dryRun: true,
-      fastmailUsername,
-      fastmailPassword,
+      resendApiKey,
+      resendFrom,
     };
   }
 
-  if (fastmailUsername === null || fastmailPassword === null) {
-    throw new Error("FASTMAIL_USERNAME and FASTMAIL_PASSWORD are required when DRY_RUN=false");
+  if (resendApiKey === null || resendFrom === null) {
+    throw new Error("RESEND_API_KEY and RESEND_FROM are required when DRY_RUN=false");
   }
 
   return {
     ...base,
     dryRun: false,
-    fastmailUsername,
-    fastmailPassword,
+    resendApiKey,
+    resendFrom,
   };
 }
 
@@ -287,8 +277,8 @@ export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
     parsed.data.INBOX_PROCESSING_CRON,
   );
   const dryRun = parsed.data.DRY_RUN === "true";
-  const fastmailUsername = parsed.data.FASTMAIL_USERNAME ?? null;
-  const fastmailPassword = parsed.data.FASTMAIL_PASSWORD ?? null;
+  const resendApiKey = parsed.data.RESEND_API_KEY ?? null;
+  const resendFrom = parsed.data.RESEND_FROM ?? null;
   const shared = {
     nodeEnv: parsed.data.NODE_ENV,
     googleClientId: parsed.data.GOOGLE_CLIENT_ID,
@@ -305,8 +295,6 @@ export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,
     summaryRecipient: parsed.data.SUMMARY_RECIPIENT,
-    fastmailSmtpHost: parsed.data.FASTMAIL_SMTP_HOST,
-    fastmailSmtpPort: parsed.data.FASTMAIL_SMTP_PORT,
     inboxProcessingCron,
   };
 
@@ -314,20 +302,20 @@ export function parseSchedulerEnv(source: EnvSource): SchedulerEnv {
     return {
       ...shared,
       dryRun: true,
-      fastmailUsername,
-      fastmailPassword,
+      resendApiKey,
+      resendFrom,
     };
   }
 
-  if (fastmailUsername === null || fastmailPassword === null) {
-    throw new Error("FASTMAIL_USERNAME and FASTMAIL_PASSWORD are required when DRY_RUN=false");
+  if (resendApiKey === null || resendFrom === null) {
+    throw new Error("RESEND_API_KEY and RESEND_FROM are required when DRY_RUN=false");
   }
 
   return {
     ...shared,
     dryRun: false,
-    fastmailUsername,
-    fastmailPassword,
+    resendApiKey,
+    resendFrom,
   };
 }
 

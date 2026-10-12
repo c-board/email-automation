@@ -5,7 +5,7 @@ import type { Logger } from "../logging/logger.js";
 import { LogEvent } from "../logging/events.js";
 import { errorText } from "../logging/sanitize.js";
 import { formatSummary } from "./format-summary.js";
-import type { SummaryMailer } from "./fastmail.js";
+import type { SummaryMailer } from "./resend.js";
 
 export type SendDailySummaryResult = {
   status: "empty" | "dry_run" | "sent" | "failed";
@@ -130,7 +130,7 @@ export async function sendDailySummary(deps: SendDailySummaryDeps): Promise<Send
   }
 
   if (deps.mailer === null || deps.fromAddress === null) {
-    throw new Error("FASTMAIL_USERNAME and FASTMAIL_PASSWORD are required when DRY_RUN=false");
+    throw new Error("RESEND_API_KEY and RESEND_FROM are required when DRY_RUN=false");
   }
 
   try {
